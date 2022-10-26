@@ -1,0 +1,14 @@
+.vscode
+*__pycache__
+
+# directories
+cache/
+dataset/
+exp_output/
+
+# files
+*.npz
+*.png
+*.log
+*.dat
+*.csv
