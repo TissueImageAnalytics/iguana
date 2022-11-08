@@ -3,17 +3,26 @@
 Generates a graph along with node-level features from a WSI and it's instance-level mask
 
 Usage:
-  extract_feats.py [--k=<n>] [--start=<n>] [--end=<n>] [--wsi_ext=<str>]
+  extract_feats.py [--k=<n>] [--start=<n>] [--end=<n>] [--cerberus_dir=<path>] [--mask_dir=<path>] \
+    [--tissue_type_dir=<path>] [--wsi_dir=<path>] [--output_dir=<path>] [--logging_dir=<path>] [--cache_path=<path>] [--focus_mode=<str>]
   extract_feats.py (-h | --help)
   extract_feats.py --version
 
 Options:
-  -h --help           Show this string.
-  --version           Show version.
-  --k=<n>             Number of 'nearest' glands to consider. [default: 6]
-  --start=<n>         Start position for file batching.
-  --end=<n>           End position for file batching.
-  --wsi_ext=<str>     Extension of the WSI file. [default: .svs]
+  -h --help                 Show this string.
+  --version                 Show version.
+  --k=<n>                   Number of 'nearest' glands to consider. [default: 6]
+  --start=<n>               Start position for file batching.
+  --end=<n>                 End position for file batching.
+  --cerberus_dir=<path>     Input directory to process containing results of Cerberus.
+  --mask_dir=<path>         Directory where tissue mask are located.
+  --tissue_type_dir=<path>  Directory where tissue type classification results from Cerberus are located.
+  --wsi_dir=<path>          Directory where original WSIs are stored.
+  --output_dir=<path>       Output directory where results where features will be saved.
+  --logging_dir=<path>      Where python logging information will be output. [default: logging/]
+  --cache_path=<path>       Cache location. [default: /root/dgx_workspace/cache/]
+  --focus_mode=<str>        Region to consider for cell quantification. `lp` denotes lamina propria. [default: lp]
+  
 """
 
 import logging 
@@ -23,7 +32,7 @@ import numpy as np
 import glob
 import time
 import os
-import sys
+import cv2
 import pickle
 import shutil
 
@@ -36,14 +45,26 @@ from collections import defaultdict
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = None # otherwise errors when reading large masks
 
-from misc.utils import rm_n_mkdir
+from misc.utils import rm_n_mkdir, get_focus_tissue
 from misc.feat_utils import *
 
-#! this needs to be factored out!
-sys.path.append("/root/romesco_workspace/code/tiatoolbox")
-from tiatoolbox.wsicore import wsireader
-
 cv2.setNumThreads(0)  # otherwise multiprocessing hangs
+
+
+morph_feats_list = [
+    "area",
+    "perimeter",
+    "equiv-diameter",
+    "extent",
+    "convex-area",
+    "solidity",
+    "major-axis-length",
+    "minor-axis-length",
+    "eccentricity",
+    "orientation",
+    "ellipse-centre-x",
+    "ellipse-centre-y",
+    ]
 
 
 def timeit(start, message):
@@ -64,14 +85,14 @@ def save_dict_regions(input_dict, cache_dir, name):
 def extract_features(
     input_path, 
     mask_path, 
-    wsi_path, 
     tissue_type_path, 
-    lamina_path, 
+    wsi_path, 
     output_path, 
     logging_path=None,
     cache_path=None,
     k=6,
     index_info=None,
+    focus_mode="lp"
 ):
     """
     Extract object-level features and construct graph
@@ -79,15 +100,17 @@ def extract_features(
     Args:
         input_path: root path containing segmentation results for single file 
         mask_path: path to binary tissue masks
-        wsi_path: path to original whole-slide images
         tissue_type_path: path to tissue type segmentation map
-        lamina_path: path to lamina propria mask
+        wsi_path: path to whole-slide images
         output_path: path where features w  ill be saved
         logging_path: path to where logging is saved
         cache_path: path where temporary files are saved
         k: number of nearest distances to consider (used in 'get_k_nearest_dst')
+        index_info: information denoting the start and end indices of the batch- used for logging.
+        focus_mode: whether to consider cell quantification in lamina propria (`lp`) or entire tissue.
+            Lamina propria should be used when considering biopsies.
+            
     """
-
     wsi_name = os.path.basename(input_path)
     wsi_name = wsi_name[:-4]
 
@@ -110,8 +133,8 @@ def extract_features(
     logger.addHandler(fhandler)
     logger.setLevel(logging.DEBUG)
 
-    # check whether file has not already been processed and laimina propria mask exists!
-    if not os.path.exists(f"{save_path}/local_feats.csv") and os.path.exists(lamina_path + wsi_name + ".png") and wsi_name not in wsi_void_list:
+    # check whether file has not already been processed!
+    if not os.path.exists(f"{save_path}/local_feats.csv") and wsi_name not in wsi_void_list:
         rm_n_mkdir(save_path)
 
         logger.info(f"Extracting features from {wsi_name} ...")
@@ -122,30 +145,27 @@ def extract_features(
         logger.info("Loaded data!")
 
         if "Gland" in all_info.keys():
-            gland_info_ = all_info["Gland"]
+            gland_info = all_info["Gland"]
         else:
-            gland_info_ = {}
+            gland_info = {}
         if "Lumen" in all_info.keys():
-            lumen_info_ = all_info["Lumen"]
+            lumen_info = all_info["Lumen"]
         else:
-            lumen_info_ = {}
+            lumen_info = {}
         if "Nuclei" in all_info.keys():
-            nuclei_info_ = all_info["Nuclei"]
+            nuclei_info = all_info["Nuclei"]
         else:
-            nuclei_info_ = {}
-        proc_resolution = all_info["resolution"]
+            nuclei_info = {}
+        proc_resolution = all_info["proc_dimensions"]
         del all_info
 
         # read the tissue mask
-        tissue_mask = cv2.imread(mask_path + wsi_name + ".png", 0)
+        tissue_mask = cv2.imread(f"{mask_path}/{wsi_name}.png", 0)
         tissue_mask_shape = tissue_mask.shape
 
-        mask_ds_factor = 0.125
-        gland_info = gland_info_
-        lumen_info = lumen_info_
-        nuclei_info = nuclei_info_
+        mask_ds_factor = tissue_mask_shape[0] / proc_resolution[0]
         
-        tissue_type_mask = cv2.imread(tissue_type_path + wsi_name + ".png", 0)
+        tissue_type_mask = cv2.imread(f"{tissue_type_path}/{wsi_name}.png", 0)
         # read the segmentation maps
         if tissue_type_mask.shape != tissue_mask_shape:
             tissue_type_mask = cv2.resize(
@@ -154,26 +174,24 @@ def extract_features(
                 interpolation=cv2.INTER_NEAREST
                 )
 
-        lamina_mask = cv2.imread(lamina_path + wsi_name + ".png", 0)
-        if lamina_mask.shape != tissue_mask_shape:
-            lamina_mask = cv2.resize(
-                lamina_mask, 
-                (tissue_mask.shape[1], tissue_mask.shape[0]), 
-                interpolation=cv2.INTER_NEAREST
-                )
+        wsi_filename = glob.glob(f"{wsi_path}/{wsi_name}*")[0]
+        focus_mask = get_focus_tissue(wsi_filename, tissue_type_mask, gland_info, mode=focus_mode, ds_factor=8)
+        logger.info("Generated focus mask.")
 
         tissue_lab = measurements.label(tissue_mask)[0]
         unique_tissue = np.unique(tissue_lab).tolist()[1:]
         del tissue_mask
 
-        # only consider non surface epithelium glands!
+        # only consider non surface epithelium glands (gland label = 1)!
         gland_tissue_info = filter_coords_msk(gland_info, tissue_lab, scale=mask_ds_factor, label=1)
-        surfepi_tissue_info = filter_coords_msk(gland_info, tissue_lab, scale=mask_ds_factor, label=2)
         lumen_tissue_info = filter_coords_msk(lumen_info, tissue_lab, scale=mask_ds_factor)
-        nuclei_tissue_info, nuclei_lamina_info  = filter_coords_msk2(
+        # filter_coords_msk2 outputs 2 dicts: 
+        # 1) nuclei info in each tissue region
+        # 2) nuclei info in focus area of each tissue region (lamina propria for biopsy)
+        nuclei_tissue_info, nuclei_focus_info  = filter_coords_msk2(
             nuclei_info, 
             tissue_lab, 
-            mask2 = lamina_mask,
+            mask2 = focus_mask,
             scale=mask_ds_factor,
             mode="centroid"
         )
@@ -186,22 +204,20 @@ def extract_features(
         # get the contour coords from glands and reduce the number of points for faster computation
         gland_tissue_cnts = grab_cnts(gland_tissue_info, ds_factor=4)
         # get the contour coords from glands and reduce the number of points for faster computation
-        nuclei_lamina_cents = grab_centroids_type(nuclei_lamina_info)
-        del nuclei_lamina_info
+        nuclei_focus_cents = grab_centroids_type(nuclei_focus_info)
+        del nuclei_focus_info
 
         # save to cache - reduces need for large RAM!
         cache_dir = f"{cache_path}/{wsi_name}"
         rm_n_mkdir(cache_dir)
         save_dict_regions(gland_tissue_info, cache_dir, 'gland')
         del gland_tissue_info
-        save_dict_regions(surfepi_tissue_info, cache_dir, 'surfepi')
-        del surfepi_tissue_info
         save_dict_regions(lumen_tissue_info, cache_dir, 'lumen')
         del lumen_tissue_info
         save_dict_regions(nuclei_tissue_info, cache_dir, 'nuclei_tissue')
         del nuclei_tissue_info
-        save_dict_regions(nuclei_lamina_cents, cache_dir, 'nuclei_lp')
-        del nuclei_lamina_cents
+        save_dict_regions(nuclei_focus_cents, cache_dir, 'nuclei_focus')
+        del nuclei_focus_cents
         save_dict_regions(gland_tissue_cnts, cache_dir, 'gland_cnts')
         del gland_tissue_cnts
 
@@ -223,14 +239,12 @@ def extract_features(
             logger.info(f"Glands in tissue idx {tissue_idx}: {nr_glands}")
             # make sure there are at least 4 glands within the tissue region
             if nr_glands >= 4:
-                with open(f"{cache_dir}/surfepi_{tissue_val}.pickle", 'rb') as f:
-                    surfepi_info_subset = pickle.load(f)
                 with open(f"{cache_dir}/lumen_{tissue_val}.pickle", 'rb') as f:
                     lumen_info_subset = pickle.load(f)
                 with open(f"{cache_dir}/nuclei_tissue_{tissue_val}.pickle", 'rb') as f:
                     nuclei_tissue_info_subset = pickle.load(f)
-                with open(f"{cache_dir}/nuclei_lp_{tissue_val}.pickle", 'rb') as f:
-                    nuclei_lamina_info_subset = pickle.load(f)
+                with open(f"{cache_dir}/nuclei_focus_{tissue_val}.pickle", 'rb') as f:
+                    nuclei_focus_info_subset = pickle.load(f)
                 with open(f"{cache_dir}/gland_cnts_{tissue_val}.pickle", 'rb') as f:
                     gland_cnts_subset = pickle.load(f)
 
@@ -246,9 +260,9 @@ def extract_features(
                 else:
                     nbors = nr_neighbours
 
-                nr_nuclei_lamina = len(list(nuclei_lamina_info_subset.keys()))
+                nr_nuclei_focus = len(list(nuclei_focus_info_subset.keys()))
                 # convert centroids into kdtree for quick search
-                nuclei_lamina_info_sub_kdtree, labels_nuc_lamina, centroids_nuc_lamina = get_kdtree(nuclei_lamina_info_subset)
+                nuclei_focus_info_sub_kdtree, labels_nuc_focus, centroids_nuc_focus = get_kdtree(nuclei_focus_info_subset)
                 nuclei_tissue_info_sub_kdtree, labels_nuc_tissue, centroids_nuc_tissue = get_kdtree(nuclei_tissue_info_subset)
                 gland_dst = get_dst_matrix(list(gland_cnts_subset.values()), sorted=True)
                 gland_dst_subset = gland_dst[:, 1:nbors+1] # ignore first entry (diagnonal entry is always 0)
@@ -257,13 +271,14 @@ def extract_features(
                 for gland_idx, single_gland_info in gland_info_subset.items():
                     # initialise empty dictionary for features from single gland
                     local_feats_single = {}
+                    local_feats_single["obj_id"] = gland_idx # unqiue object identifier
                     gland_cnt = single_gland_info["contour"]
                     if gland_cnt.shape[0] > 4:
                         all_glands += 1
                         gland_contour_list.append(gland_cnts_subset[gland_idx])
                         tissue_idx_list.append(tissue_idx)
                         gland_morph_feats = get_contour_feats(gland_cnt)
-                        gland_area = gland_morph_feats["Area"]
+                        gland_area = gland_morph_feats["area"]
                         gland_centroid = single_gland_info["centroid"]
                         gland_bbox = cv2.boundingRect(gland_cnt)
 
@@ -287,25 +302,25 @@ def extract_features(
                          stroma_prop, 
                          debris_prop, 
                          mucous_prop, 
-                         adipose_prop) = get_patch_prop(region_info_patch, total_pix, lab=[1,2,3,4,5,6,7,8])
+                         adipose_prop) = get_patch_prop(region_info_patch, total_pix, labs=[1,2,3,4,5,6,7,8])
 
                         # add features the dictionary
-                        local_feats_single["Gland_Inflam_Prop"] = inflam_prop
-                        local_feats_single["Gland_Mucous_Prop"] = mucous_prop
-                        local_feats_single["Gland_Debris_Prop"] = debris_prop
-                        local_feats_single["Gland_Normal_Prop"] = normal_prop
-                        local_feats_single["Gland_Tumour_Prop"] = tumour_prop
-                        local_feats_single["Gland_Adipose_Prop"] = adipose_prop
-                        local_feats_single["Gland_Stroma_Prop"] = stroma_prop
-                        local_feats_single["Gland_Muscle_Prop"] = muscle_prop
+                        local_feats_single["gland_inflam_prop"] = inflam_prop
+                        local_feats_single["gland_mucous_prop"] = mucous_prop
+                        local_feats_single["gland_debris_prop"] = debris_prop
+                        local_feats_single["gland_normal_prop"] = normal_prop
+                        local_feats_single["gland_tumour_prop"] = tumour_prop
+                        local_feats_single["gland_adipose_prop"] = adipose_prop
+                        local_feats_single["gland_stroma_prop"] = stroma_prop
+                        local_feats_single["gland_muscle_prop"] = muscle_prop
 
-                        local_feats_single["Gland_BAM"] = gland_bam
+                        local_feats_single["gland_bam"] = gland_bam
                         for feat_name, value in gland_morph_feats.items():
-                            local_feats_single[f"Gland-{feat_name}"] = value
+                            local_feats_single[f"gland-{feat_name}"] = value
                         for idx, value in enumerate(gland_distances):
-                            local_feats_single[f"Gland-Dist{idx+1}"] = value
+                            local_feats_single[f"gland-dist{idx+1}"] = value
 
-                        #! get the lumen info within the gland
+                        #* get the lumen info within the gland
                         filtered_lumen_tissue = lumen_tissue_df.loc[
                             (lumen_tissue_df['cx'] >= gland_bbox[0]) & 
                             (lumen_tissue_df['cy'] >= gland_bbox[1]) &
@@ -320,12 +335,12 @@ def extract_features(
                         lumen_morph_list = []
                         nr_lumen = 0
                         lumen_total_area = 0
-                        for lumen_idx, single_lumen_info in lumen_within_gland_info.items():
+                        for _, single_lumen_info in lumen_within_gland_info.items():
                             lumen_cnt = single_lumen_info["contour"]
                             if lumen_cnt.shape[0] > 4:
                                 nr_lumen += 1
                                 lumen_morph_feats = get_contour_feats(lumen_cnt)
-                                lumen_total_area += lumen_morph_feats["Area"]
+                                lumen_total_area += lumen_morph_feats["area"]
                                 lumen_centroid = single_lumen_info["centroid"]
                                 lumen_bam = get_bam(lumen_cnt, lumen_centroid)
 
@@ -344,22 +359,22 @@ def extract_features(
                             lumen_bam_list = np.array(lumen_bam_list)
                             lumen_morph_list = np.array(lumen_morph_list)
                         ####
-                        local_feats_single["Lumen-Number"] = nr_lumen
-                        local_feats_single["Lumen-Gland_Ratio"] = lumen_total_area / (gland_area + lumen_total_area)
-                        local_feats_single["Lumen-BAM-Min"] = np.min(lumen_bam_list)
-                        local_feats_single["Lumen-BAM-Max"] = np.max(lumen_bam_list)
-                        local_feats_single["Lumen-BAM-Mean"] = np.mean(lumen_bam_list)
-                        local_feats_single["Lumen-BAM-Std"] = np.std(lumen_bam_list)
+                        local_feats_single["lumen-number"] = nr_lumen
+                        local_feats_single["lumen-gland_ratio"] = lumen_total_area / (gland_area + lumen_total_area)
+                        local_feats_single["lumen-bam-min"] = np.min(lumen_bam_list)
+                        local_feats_single["lumen-bam-max"] = np.max(lumen_bam_list)
+                        local_feats_single["lumen-bam-mean"] = np.mean(lumen_bam_list)
+                        local_feats_single["lumen-bam-std"] = np.std(lumen_bam_list)
                         ####
                         idx_count = 0
                         for feat_name in morph_feats_list:
-                            local_feats_single[f"Lumen-{feat_name}-Min"] = np.min(lumen_morph_list[:, idx_count])
-                            local_feats_single[f"Lumen-{feat_name}-Max"] = np.max(lumen_morph_list[:, idx_count])
-                            local_feats_single[f"Lumen-{feat_name}-Mean"] = np.mean(lumen_morph_list[:, idx_count])
-                            local_feats_single[f"Lumen-{feat_name}-Std"] = np.std(lumen_morph_list[:, idx_count])
+                            local_feats_single[f"lumen-{feat_name}-min"] = np.min(lumen_morph_list[:, idx_count])
+                            local_feats_single[f"lumen-{feat_name}-max"] = np.max(lumen_morph_list[:, idx_count])
+                            local_feats_single[f"lumen-{feat_name}-mean"] = np.mean(lumen_morph_list[:, idx_count])
+                            local_feats_single[f"lumen-{feat_name}-mtd"] = np.std(lumen_morph_list[:, idx_count])
                             idx_count += 1
 
-                        #! get the nuclei info within the gland
+                        #* get the nuclei info within the gland
                         filtered_nuclei_tissue = nuclei_tissue_df.loc[
                             (nuclei_tissue_df['cx'] >= gland_bbox[0]) & 
                             (nuclei_tissue_df['cy'] >= gland_bbox[1]) &
@@ -387,7 +402,7 @@ def extract_features(
                         count_eos = 0
                         count_nuclei = 0
 
-                        for nuclei_idx, single_nuclei_info in nuclei_within_gland_info.items():
+                        for single_nuclei_info in nuclei_within_gland_info.values():
                             #### Get the counts of different nuclei within each gland
                             nuclei_type = single_nuclei_info["type"]
                             ####
@@ -429,49 +444,48 @@ def extract_features(
                             nuclei_morph_list = np.array(nuclei_morph_list)
 
                         #! normalise counts by the gland area!
-                        local_feats_single["Nuclei-Gland-EpiCount"] = count_epi / gland_area
-                        local_feats_single["Nuclei-Gland-LymCount"] = count_lym / gland_area
-                        local_feats_single["Nuclei-Gland-PlasCount"] = count_plas / gland_area
-                        local_feats_single["Nuclei-Gland-NeutCount"] = count_neut / gland_area
-                        local_feats_single["Nuclei-Gland-EosCount"] = count_eos / gland_area
-                        local_feats_single["Nuclei-Gland-NucCount"] = count_nuclei / gland_area
+                        local_feats_single["nuclei-gland-epicount"] = count_epi / gland_area
+                        local_feats_single["nuclei-gland-lymcount"] = count_lym / gland_area
+                        local_feats_single["nuclei-gland-plascount"] = count_plas / gland_area
+                        local_feats_single["nuclei-gland-neutcount"] = count_neut / gland_area
+                        local_feats_single["nuclei-gland-eoscount"] = count_eos / gland_area
+                        local_feats_single["nuclei-gland-nuccount"] = count_nuclei / gland_area
                         ####
-                        local_feats_single["Nuclei-InterEpi-Min"] = np.min(nuclei_inter_epi_dst)
-                        local_feats_single["Nuclei-InterEpi-Max"] = np.max(nuclei_inter_epi_dst)
-                        local_feats_single["Nuclei-InterEpi-Mean"] = np.mean(nuclei_inter_epi_dst)
-                        local_feats_single["Nuclei-InterEpi-Std"] = np.std(nuclei_inter_epi_dst)
+                        local_feats_single["nuclei-inter-epi-min"] = np.min(nuclei_inter_epi_dst)
+                        local_feats_single["nuclei-inter-epi-max"] = np.max(nuclei_inter_epi_dst)
+                        local_feats_single["nuclei-inter-epi-mean"] = np.mean(nuclei_inter_epi_dst)
+                        local_feats_single["nuclei-inter-epi-std"] = np.std(nuclei_inter_epi_dst)
                         ####
-                        local_feats_single["Nuclei-DistBoundary-Min"] = np.min(nuclei_dst_list)
-                        local_feats_single["Nuclei-DistBoundary-Max"] = np.max(nuclei_dst_list)
-                        local_feats_single["Nuclei-DistBoundary-Mean"] = np.mean(nuclei_dst_list)
-                        local_feats_single["Nuclei-DistBoundary-Std"] = np.std(nuclei_dst_list)
+                        local_feats_single["nuclei-dist-boundary-min"] = np.min(nuclei_dst_list)
+                        local_feats_single["nuclei-dist-boundary-max"] = np.max(nuclei_dst_list)
+                        local_feats_single["nuclei-dist-boundary-mean"] = np.mean(nuclei_dst_list)
+                        local_feats_single["nuclei-dist-boundary-std"] = np.std(nuclei_dst_list)
 
-                        local_feats_single["Nuclei-DistLumen-Min"] = np.min(nuclei_lumen_dst_list)
-                        local_feats_single["Nuclei-DistLumen-Max"] = np.max(nuclei_lumen_dst_list)
-                        local_feats_single["Nuclei-DistLumen-Mean"] = np.mean(nuclei_lumen_dst_list)
-                        local_feats_single["Nuclei-DistLumen-Std"] = np.std(nuclei_lumen_dst_list)
-
+                        local_feats_single["nuclei-dist-lumen-min"] = np.min(nuclei_lumen_dst_list)
+                        local_feats_single["nuclei-dist-lumen-max"] = np.max(nuclei_lumen_dst_list)
+                        local_feats_single["nuclei-dist-lumen-mean"] = np.mean(nuclei_lumen_dst_list)
+                        local_feats_single["nuclei-dist-lumen-std"] = np.std(nuclei_lumen_dst_list)
                         idx_count = 0
                         for feat_name in morph_feats_list:
-                            local_feats_single[f"Nuclei-{feat_name}-Min"] = np.min(nuclei_morph_list[:, idx_count])
-                            local_feats_single[f"Nuclei-{feat_name}-Max"] = np.max(nuclei_morph_list[:, idx_count])
-                            local_feats_single[f"Nuclei-{feat_name}-Mean"] = np.mean(nuclei_morph_list[:, idx_count])
-                            local_feats_single[f"Nuclei-{feat_name}-Std"] = np.std(nuclei_morph_list[:, idx_count])
+                            local_feats_single[f"nuclei-{feat_name}-min"] = np.min(nuclei_morph_list[:, idx_count])
+                            local_feats_single[f"nuclei-{feat_name}-max"] = np.max(nuclei_morph_list[:, idx_count])
+                            local_feats_single[f"nuclei-{feat_name}-mean"] = np.mean(nuclei_morph_list[:, idx_count])
+                            local_feats_single[f"nuclei-{feat_name}-std"] = np.std(nuclei_morph_list[:, idx_count])
                             idx_count += 1
 
                         colocalisation_array = np.zeros([6, 6])
-                        if nuclei_lamina_info_sub_kdtree is not None:
+                        if nuclei_focus_info_sub_kdtree is not None:
                             # now get the closest N nuclei to the gland and get the stats
-                            # get the distances of all nuclei (within LP of tissue region) to the gland
-                            nuclei_sample_nr = 300 # number of nuclei to select in lamina propria
+                            # get the distances of all nuclei (within focus region of tissue) to the gland
+                            nuclei_sample_nr = 300 # number of nuclei to select in focus region (lamina propria for biopsy)
                             # gland_nuc_dst_dict returns dict of form {type: distance}
                             gland_nuc_dst, nuc_labs, nuc_coords = get_k_nearest_from_contour(
                                 gland_cnt, 
-                                nuclei_lamina_info_sub_kdtree, 
-                                labels_nuc_lamina, 
-                                centroids_nuc_lamina,
+                                nuclei_focus_info_sub_kdtree, 
+                                labels_nuc_focus, 
+                                centroids_nuc_focus,
                                 k=nuclei_sample_nr,
-                                nr_samples=nr_nuclei_lamina
+                                nr_samples=nr_nuclei_focus
                                 )
 
                             count_neut = 0
@@ -560,40 +574,45 @@ def extract_features(
                                 else:
                                     colocalisation_norm.append(row_tmp / np.sum(row_tmp))
                             colocalisation_norm = np.array(colocalisation_norm)
-                            array_idx = ["Neut", "Epi", "Lym", "Plas", "Eos", "Conn"]
+                            nuc_classes = ["neut", "epi", "lym", "plas", "eos", "conn"]
                             for coloc_idx1 in range(colocalisation_norm.shape[0]):
                                 for coloc_idx2 in range(colocalisation_norm.shape[1]):
                                     coloc_value = colocalisation_norm[coloc_idx1, coloc_idx2]
-                                    nuc_name1 = array_idx[coloc_idx1]
-                                    nuc_name2 = array_idx[coloc_idx2]
-                                    local_feats_single[f"Colocalisation-{nuc_name1}-{nuc_name2}"] = coloc_value
+                                    nuc_name1 = nuc_classes[coloc_idx1]
+                                    nuc_name2 = nuc_classes[coloc_idx2]
+                                    local_feats_single[f"colocalisation-{nuc_name1}-{nuc_name2}"] = coloc_value
 
-                            local_feats_single["Nuclei-LP-Lym-Prop"] = count_lym / len(gland_nuc_dst)
-                            local_feats_single["Nuclei-LP-Plas-Prop"] = count_plas / len(gland_nuc_dst)
-                            local_feats_single["Nuclei-LP-Neut-Prop"] = count_neut / len(gland_nuc_dst)
-                            local_feats_single["Nuclei-LP-Eos-Prop"] = count_eos / len(gland_nuc_dst)
-                            local_feats_single["Nuclei-LP-Conn-Prop"] = count_conn / len(gland_nuc_dst)
+                            local_feats_single["nuclei-focus-lym-prop"] = count_lym / len(gland_nuc_dst)
+                            local_feats_single["nuclei-focus-plas-prop"] = count_plas / len(gland_nuc_dst)
+                            local_feats_single["nuclei-focus-neut-prop"] = count_neut / len(gland_nuc_dst)
+                            local_feats_single["nuclei-focus-eos-prop"] = count_eos / len(gland_nuc_dst)
+                            local_feats_single["nuclei-focus-conn-prop"] = count_conn / len(gland_nuc_dst)
                             ##
-                            local_feats_single["Nuclei-LP-Lym-Density"] = lym_mean_dst
-                            local_feats_single["Nuclei-LP-Plas-Density"] = plas_mean_dst
-                            local_feats_single["Nuclei-LP-Neut-Density"] = neut_mean_dst
-                            local_feats_single["Nuclei-LP-Eos-Density"] = eos_mean_dst
-                            local_feats_single["Nuclei-LP-Conn-Density"] = conn_mean_dst
-                            local_feats_single["Nuclei-Inf-Density"] = inflam_mean_dst   
+                            local_feats_single["nuclei-focus-lym-density"] = lym_mean_dst
+                            local_feats_single["nuclei-focus-plas-density"] = plas_mean_dst
+                            local_feats_single["nuclei-focus-neut-density"] = neut_mean_dst
+                            local_feats_single["nuclei-focus-eos-density"] = eos_mean_dst
+                            local_feats_single["nuclei-focus-conn-density"] = conn_mean_dst
+                            local_feats_single["nuclei-inf-density"] = inflam_mean_dst   
 
                         else:
-                            local_feats_single["Nuclei-LP-Lym-Prop"] = 0
-                            local_feats_single["Nuclei-LP-Plas-Prop"] = 0
-                            local_feats_single["Nuclei-LP-Neut-Prop"] = 0
-                            local_feats_single["Nuclei-LP-Eos-Prop"] = 0
-                            local_feats_single["Nuclei-LP-Conn-Prop"] = 0
+                            nuc_classes = ["neut", "epi", "lym", "plas", "eos", "conn"]
+                            for nuc_name1 in nuc_classes:
+                                for nuc_name2 in nuc_classes:
+                                    local_feats_single[f"colocalisation-{nuc_name1}-{nuc_name2}"] = 0
+                            ##    
+                            local_feats_single["nuclei-focus-lym-prop"] = 0
+                            local_feats_single["nuclei-focus-plas-prop"] = 0
+                            local_feats_single["nuclei-focus-neut-prop"] = 0
+                            local_feats_single["nuclei-focus-eos-prop"] = 0
+                            local_feats_single["nuclei-focus-conn-prop"] = 0
                             ##
-                            local_feats_single["Nuclei-LP-Lym-Density"] = np.nan
-                            local_feats_single["Nuclei-LP-Plas-Density"] = np.nan
-                            local_feats_single["Nuclei-LP-Neut-Density"] = np.nan
-                            local_feats_single["Nuclei-LP-Eos-Density"] = np.nan
-                            local_feats_single["Nuclei-LP-Conn-Density"] = np.nan
-                            local_feats_single["Nuclei-Inf-Density"] = np.nan
+                            local_feats_single["nuclei-focus-lym-density"] = np.nan
+                            local_feats_single["nuclei-focus-plas-density"] = np.nan
+                            local_feats_single["nuclei-focus-neut-density"] = np.nan
+                            local_feats_single["nuclei-focus-eos-density"] = np.nan
+                            local_feats_single["nuclei-focus-conn-density"] = np.nan
+                            local_feats_single["nuclei-inf-density"] = np.nan
 
                         local_feats[gland_idx] = local_feats_single
 
@@ -619,6 +638,7 @@ def extract_features(
             joblib.dump(local_feats, f"{save_path}/local_feats.dat")
 
             # save local feats to csv
+            joblib.dump(local_feats_agg, f"{save_path}/local_feats_agg.dat")
             df_local_feats = pd.DataFrame(data=local_feats_agg)
             df_local_feats.to_csv(f"{save_path}/local_feats.csv", index=False)
 
@@ -644,7 +664,7 @@ def extract_features(
         logger.handlers.clear() # close logger
 
 
-def run(input_files, mask_path, wsi_path, tissue_type_path, lamina_path, output_path, logging_path, cache_path, k, idx_info, wsi_ext):
+def run(input_files, mask_path, tissue_type_path, wsi_path, output_path, logging_path, cache_path, k, idx_info, focus_mode):
     """Extract features from all input files"""
 
     pbar = ProgressBar("Processing", max=len(input_files), width=48)
@@ -655,14 +675,14 @@ def run(input_files, mask_path, wsi_path, tissue_type_path, lamina_path, output_
         extract_features(
             input_path, 
             mask_path, 
-            wsi_path, 
             tissue_type_path, 
-            lamina_path, 
+            wsi_path, 
             output_path,
             logging_path,
             cache_path,
             k,
             idx_info,
+            focus_mode,
         )
         end = time.time()
         print('Processing Time:', end-start)
@@ -678,34 +698,41 @@ def run(input_files, mask_path, wsi_path, tissue_type_path, lamina_path, output_
 if __name__ == "__main__":
     args = docopt(__doc__)
 
-    k = int(args["--k"])
-    start_idx = int(args["--start"])
+    # start and end idx are used for subsetting the input file list for processing
+    start_idx = int(args["--start"]) 
     end_idx = int(args["--end"])
-    wsi_ext = args["--wsi_ext"]
+    k = int(args["--k"])
+    
+    cerberus_path = args["--cerberus_dir"]
+    mask_path = args["--mask_dir"]
+    tissue_type_path = args["--tissue_type_dir"]
+    wsi_path = args["--wsi_dir"]
+    output_path = args["--output_dir"]   
+    logging_path = args["--logging_dir"]
+    cache_path = args["--cache_path"] 
+    
+    focus_mode = args["--focus_mode"] # use `lp` (lamina propria) for biopsy
 
-    input_path = "/root/lsf_workspace/proc_slides/coad_tcga/cerberus/"
-    mask_path = "/root/lsf_workspace/proc_slides/coad_tcga/masks/"
-    wsi_path = ""
-    tissue_type_path = "/root/lsf_workspace/proc_slides/coad_tcga/tissue/"
-    lamina_path = "/root/lsf_workspace/proc_slides/coad_tcga/nongland/"
-    output_path = "/root/lsf_workspace/proc_slides/coad_tcga/feats/"
-
-    logging_path = "logging/"
-    cache_path = "/root/dgx_workspace/cache/"
-
-    input_files_ = glob.glob(input_path + "*.dat")
+    input_files_ = glob.glob(cerberus_path + "/*.dat") # cerberus segmentation results
 
     input_files = []
     for input_file in input_files_:
         basename = os.path.basename(input_file)
         wsi_name = basename[:-4]
         save_path = output_path + wsi_name
-        if not os.path.exists(f"{save_path}/local_feats.csv") and os.path.exists(lamina_path + wsi_name + ".png"):
-            input_files.append(input_file)
+        if wsi_name == "H17-71023_D1RIBH17-71023D11RIB_1":
+            if not os.path.exists(f"{save_path}/local_feats.csv"):
+                input_files.append(input_file)
 
-    # rm_n_mkdir(output_path)
+    # create output directory
+    if not os.path.exists(output_path):
+        rm_n_mkdir(output_path)
+    
+    # create logging directory
+    if not os.path.exists(logging_path):
+        rm_n_mkdir(logging_path)
+        
     input_files = input_files[start_idx:end_idx]
 
-    # Run feature extraction
-    run(input_files, mask_path, wsi_path, tissue_type_path, lamina_path, output_path, logging_path, cache_path, k, [start_idx, end_idx], wsi_ext)
-# 
+    # run feature extraction
+    run(input_files, mask_path, tissue_type_path, wsi_path, output_path, logging_path, cache_path, k, [start_idx, end_idx], focus_mode)

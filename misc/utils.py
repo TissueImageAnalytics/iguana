@@ -162,65 +162,6 @@ def get_local_feat_stats(file_list):
         local_perc_75
     )
 
-
-def get_global_feat_stats(file_list):
-    """Calculate mean and standard deviation from features- used for normalisation 
-    of input features before input to GCN.
-    
-    Args:
-        file_list: list of .dat files containing features
-    
-    """
-    feats_tmp = joblib.load(file_list[0])
-    nr_feats = feats_tmp["global_feats"].shape[-1]  # must be same number of features in each file
-    del feats_tmp
-
-    print("Getting global feature statistics...")    
-    step = 200 # number of features to consider at a time (prevent blow up in memory)
-    mean = []
-    median = []
-    std = []
-    perc_25 = []
-    perc_75 = []
-    for idx in range(0, nr_feats+1, step):
-        accumulated_feats = []
-        for filepath in file_list:
-            feats = joblib.load(filepath)["global_feats"]
-            feats = np.array(feats)
-            feats_sub = feats[idx:idx+step] # subset of feats
-            accumulated_feats.append(np.float32(feats_sub))
-        accumulated_feats = np.array(accumulated_feats)
-
-        accumulated_feats[accumulated_feats == np.inf] = 0 # remove inf values (replace with 0)
-        mean_tmp = np.nanmean(accumulated_feats, axis=0).tolist()
-        median_tmp = np.nanmedian(accumulated_feats, axis=0).tolist()
-        std_tmp = np.nanstd(accumulated_feats, axis=0).tolist()
-        perc_25_tmp = np.nanpercentile(accumulated_feats, q=25, axis=0).tolist()
-        perc_75_tmp = np.nanpercentile(accumulated_feats, q=75, axis=0).tolist()
-        mean.extend(mean_tmp)
-        median.extend(median_tmp)
-        std.extend(std_tmp)
-        perc_25.extend(perc_25_tmp)
-        perc_75.extend(perc_75_tmp)
-
-    # convert to numpy array
-    global_mean = np.array(mean)
-    global_median = np.array(median)
-    global_std = np.array(std)
-    global_perc_25 = np.array(perc_25)
-    global_perc_75 = np.array(perc_75)
-
-    print('Done!')
-
-    return (
-        global_mean, 
-        global_median, 
-        global_std, 
-        global_perc_25, 
-        global_perc_75
-    )
-
-
 def get_pna_deg(data_list, file_ext, save_path):
     """Compute the maximum in-degree in the training data. Only needed for PNA Conv."""
 
@@ -247,6 +188,7 @@ def get_pna_deg(data_list, file_ext, save_path):
         deg += torch.bincount(d, minlength=deg.numel())
     np.save(f"{save_path}/deg.npy", deg)
 
+
 def ranking_loss(pred, true):
     """Ranking loss.
     
@@ -266,6 +208,7 @@ def ranking_loss(pred, true):
                 dy = true[i]-true[j]                   
                 loss += torch.max(z, 1.0-dy*dz)
     return loss/c
+
 
 def refine_files(file_list, wsi_info):
     """Remove unwanted categories."""
@@ -310,42 +253,70 @@ def refine_files(file_list, wsi_info):
     
     return refined_list
 
-
-def get_feat_stats(file_list):
-    """Calculate mean and standard deviation from features- used for normalisation
-    of input features before input to GCN.
-
+def get_focus_tissue(wsi_path, tissuetype, results_gland, nr_classes=9, mode="lp", ds_factor=8):
+    """Get non-glandular area within the issue which is considered for cell quantification. For
+    biopsies, this is the lamina propria - otherwise, consider the entire non-glandular tissue area!
+    
     Args:
-        file_list: list of .mat files containing features
-
+        wsi_path: path to the original WSI
+        tissetype (array): tissue type prediction 
+        results_gland (dict): gland segmentation results
+        nr_classes (int): Number of classes considered by tissue type prediction
+        mode (str): if `lp` then consider lamina propria area - otherwise consider entire tissue
+        ds_factor (int): factor for converting gland segmentation coordinates to appropriate resolution.
+    
+    Returns:
+        out_focus (array): binary map containing tissue region of interest
+         
     """
-    # read the first file to get the number of features!
-    feats_tmp = sio.loadmat(file_list[0])["feats"]  # hard assumption on .mat file
-    nr_feats = feats_tmp.shape[-1]  # must be same number of features in each file
+    from scipy.ndimage import measurements
+    from skimage.morphology import remove_small_holes
+    from skimage.morphology.misc import remove_small_objects
+    
+    from tiatoolbox.wsicore.wsireader import WSIReader
+    
+    wsi_handler = WSIReader.open(wsi_path)
+    # in XY
+    wsi_thumb = wsi_handler.slide_thumbnail(resolution=4.0, units="mpp")
+    wsi_blur = cv2.GaussianBlur(
+        cv2.cvtColor(wsi_thumb, cv2.COLOR_BGR2GRAY), (3, 3), 0)
+    
+    tissuetype = cv2.resize(tissuetype, (wsi_thumb.shape[1], wsi_thumb.shape[0]))
+    del wsi_thumb
 
-    print("Getting feature statistics...")
-    mean = []
-    median = []
-    std = []
-    perc_25 = []
-    perc_75 = []
-    for idx in range(nr_feats):
-        accumulated_feats_tmp = []
-        for filepath in file_list:
-            feats = sio.loadmat(filepath)["feats"]  # hard assumption on .mat file
-            feats = feats[:, idx].tolist()
-            accumulated_feats_tmp.extend(feats)
-        mean.append(np.mean(np.array(accumulated_feats_tmp)))
-        median.append(np.median(np.array(accumulated_feats_tmp)))
-        std.append(np.std(np.array(accumulated_feats_tmp)))
-        perc_25.append(np.percentile(np.array(accumulated_feats_tmp), q=25))
-        perc_75.append(np.percentile(np.array(accumulated_feats_tmp), q=75))
+    out_focus = np.zeros([tissuetype.shape[0], tissuetype.shape[1]])
 
-    # convert to numpy array
-    mean = np.array(mean)
-    median = np.array(median)
-    std = np.array(std)
-    perc_25 = np.array(perc_25)
-    perc_75 = np.array(perc_75)
+    if mode == "lp":
+        # only consider tumour and glandular regions if lamina propria
+        for i in range(nr_classes):
+            if i == 1 or i == 2:
+                tmp = tissuetype == i
+                out_focus[tmp] = 1
+            else:
+                tmp = tissuetype == i
+                out_focus[tmp] = 0
+    else:
+        # consider all tissue
+        out_focus[out_focus > 0] = 1
 
-    return mean, median, std, perc_25, perc_75
+    out_focus = remove_small_holes(out_focus.astype("bool"), area_threshold=3900)
+    out_focus = out_focus.astype("uint8")
+
+    out_focus[out_focus > 0] = 1
+
+    for inst_info in results_gland.values():
+        cnt = inst_info["contour"]
+        cnt = cnt / ds_factor
+        cnt = np.rint(cnt).astype("int")
+        cv2.fillPoly(out_focus, pts=[cnt], color=0)
+
+    del results_gland
+
+    out_focus[wsi_blur > 225] = 0
+
+    out_focus_lab = measurements.label(out_focus)[0]
+    out_focus = remove_small_objects(out_focus_lab.astype("bool"), min_size=2500)
+
+    out_focus[out_focus > 0] = 255
+
+    return out_focus

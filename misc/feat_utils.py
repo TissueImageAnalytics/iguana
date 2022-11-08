@@ -15,21 +15,6 @@ from sklearn.neighbors import KDTree
 from .bam_utils import get_enclosing_ellipse, ellipse_to_circle, apply_transform, best_alignment_metric
 
 
-morph_feats_list = [
-    "Area",
-    "Perimeter",
-    "EquivDiameter",
-    "Extent",
-    "ConvexArea",
-    "Solidity",
-    "MajorAxisLength",
-    "MinorAxisLength",
-    "Eccentricity",
-    "Orientation",
-    "EllipseCentreX",
-    "EllipseCentreY",
-    ]
-
 def get_contour_feats(cnt):
     """Get morphological features from input contours."""
 
@@ -81,18 +66,18 @@ def get_contour_feats(cnt):
         EllipseCentre = [0, 0]
 
     return {
-        "Area": Area,
-        "Perimeter": Perimeter,
-        "EquivDiameter": EquivDiameter,
-        "Extent": Extent,
-        "ConvexArea": ConvexArea,
-        "Solidity": Solidity,
-        "MajorAxisLength": MajorAxisLength,
-        "MinorAxisLength": MinorAxisLength,
-        "Eccentricity": Eccentricity,
-        "Orientation": Orientation,
-        "EllipseCentreX": EllipseCentre[0],
-        "EllipseCentreY": EllipseCentre[1],
+        "area": Area,
+        "perimeter": Perimeter,
+        "equiv-diameter": EquivDiameter,
+        "extent": Extent,
+        "convex-area": ConvexArea,
+        "solidity": Solidity,
+        "major-axis-length": MajorAxisLength,
+        "minor-axis-length": MinorAxisLength,
+        "eccentricity": Eccentricity,
+        "orientation": Orientation,
+        "ellipse-centre-x": EllipseCentre[0],
+        "ellipse-centre-y": EllipseCentre[1],
     }
     
 
@@ -160,7 +145,7 @@ def convert_to_df(input_dict, return_type=True):
 
 
 def filter_coords_msk(coords, mask, scale=1, mode="contour", label=None):
-    """Filter input coordaintes so that only coordinates within mask remain.
+    """Filter input coordinates so that only coordinates within mask remain.
     
     Args:
         coords: input coordinates to filter
@@ -203,19 +188,25 @@ def filter_coords_msk(coords, mask, scale=1, mode="contour", label=None):
     return output_dict
 
 
-def filter_coords_msk2(coords, mask, mask2, scale=1, mode="centroid"):
-    """Filter input coordaintes so that only coordinates within mask remain.
+def filter_coords_msk2(coords, mask1, mask2, scale=1, mode="centroid"):
+    """Filter input coordinates so that only coordinates within mask remain.
+    This function returns an additional dictionary to `filter_coords_msk()`,
+    which only considers objects in a second provided mask.
     
     Args:
         coords: input coordinates to filter
-        mask: labelled tissue mask 
+        mask1: labelled tissue mask 
         mask2: binary mask for further sampling
         scale: processing resolution to mask scale factor 
         mode: whether to check entire contour or jus the centroid 
     
+    Returns:
+        output_dict1 (dict): dictionary of objects within mask
+        output_dict2 (dict): subset of output_dict1 containing only objects that are also in mask2
+        
     """
 
-    unique_tissue = np.unique(mask).tolist()[1:]
+    unique_tissue = np.unique(mask1).tolist()[1:]
     # populate empty dictionary - one per connected component in the tissue mask
     output_dict = {}
     output_dict2 = {}
@@ -236,9 +227,9 @@ def filter_coords_msk2(coords, mask, mask2, scale=1, mode="centroid"):
             coord *= scale
             coord = np.rint(coord).astype("int32")
             # make sure coordinate is within the mask
-            if coord[0] > 0 and coord[1] > 0 and coord[0] < mask.shape[1] and coord[1] < mask.shape[0]:
-                if np.sum(mask[coord[1], coord[0]]) > 0:
-                    tissue_idx = int(mask[coord[1], coord[0]])
+            if coord[0] > 0 and coord[1] > 0 and coord[0] < mask1.shape[1] and coord[1] < mask1.shape[0]:
+                if np.sum(mask1[coord[1], coord[0]]) > 0:
+                    tissue_idx = int(mask1[coord[1], coord[0]])
                     in_mask = True
                     ######
                     if np.sum(mask2[coord[1], coord[0]]) > 0:
