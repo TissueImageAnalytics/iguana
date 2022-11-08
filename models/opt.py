@@ -56,7 +56,7 @@ train_config = {
     "run_engine": {
         "train": {
             # TODO: align here, file path or what? what about CV?
-            "dataset": "",  # whats about compound dataset ?
+            "dataset": "",  # what about compound dataset ?
             "nr_procs": 10,  # number of threads for dataloader
             "run_step": train_step,  # TODO: function name or function variable ?
             "reset_per_run": False,

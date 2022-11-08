@@ -29,7 +29,7 @@ import torch
 from torch_geometric.data import DataLoader
 
 from dataloader.graph_loader import FileLoader
-from metrics.stats_utils import get_auc_pr_sen_spec_metrics_abnormal
+from metrics.stats_utils import get_sens_spec_metrics
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -123,6 +123,7 @@ class Infer(InferBase):
             true = batch_output['true']
             wsi_info = batch_output['wsi_info']
             num_examples = len(batch_output['true'])
+            
             for idx in range(num_examples):
                 pred_tmp = torch.argmax(prob[idx])
                 prob_tmp = prob[idx][1]
@@ -150,7 +151,7 @@ class Infer(InferBase):
         auc_pr = auc(re, pr)
         
         # specificity @ given sensitivity
-        _, _, spec_95, spec_97, spec_98, spec_99, spec_100 = get_auc_pr_sen_spec_metrics_abnormal(true, prob)
+        spec_95, spec_97, spec_98, spec_99, spec_100 = get_sens_spec_metrics(true, prob)
         
         print('='*50)
         print("AUC-ROC:", auc_roc)
