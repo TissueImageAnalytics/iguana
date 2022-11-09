@@ -17,16 +17,17 @@ from .run_desc import proc_valid_step_output, train_step, valid_step
 
 train_config = {
     # ------------------------------------------------------------------
-    # ! All phases have the same number of run engine
     # phases are run sequentially from index 0 to N
     "phase_list": [
         {
             "run_info": {
                 # may need more dynamic for each network
                 "net": {
+                    # model name and number of features retrieved from config
                     "desc": lambda: create_model(
-                        model_name="pna", 
-                        nr_features=25),
+                        model_name=None, 
+                        nr_features=None,
+                        node_degree=None),
                     "optimizer": [
                         optim.Adam,
                         {  # should match keyword for parameters within the optimizer

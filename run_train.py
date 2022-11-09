@@ -3,14 +3,19 @@
 Main training script for graph-based networks.
 
 Usage:
-  run_train.py [--gpu=<id>]
+  run_train.py [--gpu=<id>] [--device=<str>] [--compute_stats] [--compute_deg]
   run_train.py (-h | --help)
   run_train.py --version
-
+  
 Options:
   -h --help             Show this string.
   --version             Show version.
   --gpu=<id>            Comma separated GPU list. 
+  --device=<str>        Device in which to run the mode on. Choose `cuda` or `cpu`. [default: cuda]
+  --compute_stats       Whether to compute local statistics - used for normalising input data. 
+  --compute_deg         Whether to compute node degree - needed for PNA graph convolution.
+  --deg_path=<path>     Save location when computing the node degree. [default: node_deg/]
+  
 """
 
 import dataloader.graph_loader as graph_loader
@@ -30,13 +35,12 @@ import glob
 import numpy as np
 from docopt import docopt
 import cv2
-import pandas as pd
 
 cv2.setNumThreads(0)
 
 
-#### have to move outside because of spawn
-# * must initialize augmentor per worker, else duplicated rng generators may happen
+# * has to move outside because of spawn
+# * must initialize augmentor per worker, else it may lead toduplicated random nr generators
 
 def worker_init_fn(worker_id):
     # ! to make the seed chain reproducible, must use the torch random, not numpy
@@ -58,8 +62,12 @@ class TrainManager(Config):
         self.model_config = self.model_config_file.__getattribute__("train_config")
         self._parse_args(args)
 
-        if self.model_name == "pna" and self.compute_deg:
-            get_pna_deg(self.dataset.all_dir_list, self.dataset.file_ext, self.data_path)
+        if self.model_name == "pna":
+            if self.compute_deg:
+                get_pna_deg(self.dataset.all_data, self.deg_path)
+            self.node_degree = np.load(f"{self.deg_path}/node_deg.npy")
+        else:
+            self.node_degree = None
 
         return
 
@@ -69,7 +77,6 @@ class TrainManager(Config):
             self.__setattr__(variable[2:], value)
         return
 
-
     def get_datagen(
         self,
         batch_size,
@@ -78,26 +85,12 @@ class TrainManager(Config):
         fold_idx=0,
         compute_stats=None
     ):
-
-        file_list = []
-
-        train_files = []
-        for dir_name in self.dataset.train_dir_list:
-            train_files.extend(glob.glob("%s/*%s" % (dir_name, self.dataset.file_ext)))
-        valid_files = []
-        for dir_name in self.dataset.valid_dir_list:
-            valid_files.extend(glob.glob("%s/*%s" % (dir_name, self.dataset.file_ext)))
-        
-        # wsi_info = pd.read_excel("data/CoBi_WSI_diagnosis.xlsx")
-        # train_files = refine_files(train_files, wsi_info)
-        # valid_files = refine_files(valid_files, wsi_info)
-
-        all_data_list = train_files + valid_files
+        all_data_list = self.train_list + self.valid_list
         if run_mode == "train":
-            file_list = train_files
+            file_list = self.train_list
         else:
-            file_list = valid_files
-        file_list.sort()  # to always ensure same input ordering
+            file_list = self.valid_list
+        file_list.sort()  # ensure same input ordering
 
         assert len(file_list) > 0, (
             "No %s found for `%s`, please check `%s` in `config.py`"
@@ -125,7 +118,7 @@ class TrainManager(Config):
         ]
 
         input_dataset = graph_loader.FileLoader(
-            file_list, feat_stats=feat_stats, norm="standard", data_clean="std"
+            file_list, self.feat_name, feat_stats=feat_stats, norm="standard", data_clean="std"
         )
 
         dataloader = torch_geometric.loader.DataLoader(
@@ -178,10 +171,11 @@ class TrainManager(Config):
             assert inspect.isclass(net_info["desc"]) or inspect.isfunction(
                 net_info["desc"]
             ), "`desc` must be a Class or Function which instantiate NEW objects !!!"
-            net_desc = net_info["desc"]()
-
-            # TODO: customize print-out for each run ?
-            # summary_string(net_desc, (3, 270, 270), device='cpu')
+            net_desc = net_info["desc"](
+                model_name=self.model_name, 
+                nr_features=len(self.feat_names), 
+                node_degree=self.node_degree
+                )
 
             pretrained_path = net_info["pretrained"]
             if pretrained_path is not None:
@@ -220,13 +214,12 @@ class TrainManager(Config):
 
                 # load_state_dict returns (missing keys, unexpected keys)
                 load_feedback = net_desc.load_state_dict(net_state_dict, strict=False)
-                # * uncomment for your convenience
                 print("Missing Variables: \n", load_feedback[0])
                 print("Detected Unknown Variables: \n", load_feedback[1])
 
             # currently we only support parallel mode for standard pytorch (not pytorch geometric)
             # net_desc = DataParallel(net_desc)
-            net_desc = net_desc.to("cuda")
+            net_desc = net_desc.to(self.device)
             # print out trainable parameters
             # for name, param in net_desc.named_parameters():
             #     if param.requires_grad:
@@ -248,8 +241,8 @@ class TrainManager(Config):
             "train" in run_engine_opt
         ), "No engine for training detected in description file"
 
-        # initialize runner and attach callback afterward
-        # * all engine shared the same network info declaration
+        # initialize runner and attach callback afterwards
+        # * all engine share the same network info declaration
         runner_dict = {}
         for runner_name, runner_opt in run_engine_opt.items():
             if runner_name == "train" and self.compute_stats:
@@ -293,9 +286,7 @@ class TrainManager(Config):
         return
 
     def run(self):
-        """
-        Define multi-stage run or cross-validation or whatever in here
-        """
+        """Define multi-stage run or cross-validation here."""
         phase_list = self.model_config["phase_list"]
         engine_opt = self.model_config["run_engine"]
 
@@ -310,15 +301,10 @@ class TrainManager(Config):
 
 
 if __name__ == "__main__":
-    # args = docopt(__doc__, version="GCN v1.0")
-    # trainer = TrainManager()
-    args = {}
-    args["--gpu"] = "0"
-    args["--device"] = "cuda"
-    os.environ["CUDA_VISIBLE_DEVICES"] = args["--gpu"]
-    args["--compute_stats"] = False
-    args["--compute_deg"] = False
-    args["--data_path"] = "/root/lsf_workspace/graph_data/cobi/graph_data_refined_spiro/"
+    args = docopt(__doc__, version="GCN v1.0")
+    
+    if args["--device"] == "cuda":
+        os.environ["CUDA_VISIBLE_DEVICES"] = args["--gpu"]
 
     trainer = TrainManager(args)
     trainer.run()
