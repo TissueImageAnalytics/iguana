@@ -1,20 +1,18 @@
 import numpy as np
 import joblib
 import torch
-import torch_geometric
+import yaml
 
-from torch_geometric.data import Data, Dataset
+from torch_geometric.data import Data
+
 
 class FileLoader(torch.utils.data.Dataset):
-    """Data loader for graph data"""
+    """Data loader for graph data. The loader will use features defined in features.yml."""
 
-    def __init__(self, file_list, feat_stats, norm, data_clean):
+    def __init__(self, file_list, feat_names, feat_stats, norm, data_clean):
         self.file_list = file_list
         self.feat_stats = feat_stats
-
-        # indices of features to use
-        self.local_feats_idx = [2, 9, 21, 27, 28, 31, 34, 81, 82, 84, 85, 89, 90, 93, 94, 97, 98, 101, 102, 147, 148, 149, 150, 151, 152]
-
+        
         # get lower and upper bounds for clipping data (outlier removal)
         if data_clean == 'std':
             self.local_lower_bounds = feat_stats[0][self.local_feats_idx] - 3 * feat_stats[2][self.local_feats_idx]
@@ -44,12 +42,12 @@ class FileLoader(torch.utils.data.Dataset):
 
         edge_index = np.array(data["edge_index"])
         feats = np.array(data["local_feats"])
-
-        # select the indicies opf the features to use! Do not use first 2 columns - these are wsi_name and object_ids
-        nr_local_feats = len(self.local_feats_idx)
-        feats_sub = feats[:, self.local_feats_idx].astype('float32')
-
-        wsi_info = feats[:, :2]
+        
+        nr_local_feats = len(self.feat_names)
+        
+        feats_sub = feats[:, self.local_feats_idx].astype('float32') #! this isn't the right way of subsetting a dict
+        wsi_name = feats["wsi_name"]
+        obj_id = feats["obj_id"]
 
         # clean up data - deal with outliers!
         if self.data_clean is not None:
@@ -78,10 +76,10 @@ class FileLoader(torch.utils.data.Dataset):
         label = np.array([data["label"]])
 
         # data is 3-class -> convert to 2 class (normal vs abnormal)
-        label[label > 1] = 1
+        # label[label > 1] = 1
 
         x = torch.Tensor(feats_sub).type(torch.float)
         edge_index = torch.Tensor(edge_index).type(torch.long)
         label = torch.Tensor(label).type(torch.float)
 
-        return Data(x=x, edge_index=edge_index, y=label, wsi_info=wsi_info)
+        return Data(x=x, edge_index=edge_index, y=label, obj_id=obj_id, wsi_name=wsi_name)

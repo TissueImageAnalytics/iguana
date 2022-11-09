@@ -1,26 +1,38 @@
 """Dataset info. Modify this with your own data directories for training IGUANA."""
 
+import glob
+import pandas as pd
+import numpy as np
+
 
 class __CoBi(object):
     """Defines the Colon Biopsy (CoBi) graph dataset"""
 
     def __init__(self, fold_nr):
 
-        self.file_ext = ".dat"
+        file_ext = ".dat"
         root_dir = '/mnt/gpfs01/lsf-workspace/tialab-simon/graph_data/cobi/graph_data_refined'
-        self.all_dir_list = [f'{root_dir}/split1/', f'{root_dir}/split2/', f'{root_dir}/split3/']
+        self.all_data = glob.glob(f"{root_dir}/data/*{file_ext}")
+        
+        # csv file - 1st column indicates the WSI name and each subsequent column gives the fold info
+        # eg column 2 gives the info for fold1, column 3, gives the info for fold2, etc 
+        # for fold info: 1 denotes training, 2 denotes validation and 3 denotes testing
+        # if the dataset is an independent test set, use 1 fold info column, with all cells set to 3
+        fold_info = pd.read_csv(f"{root_dir}/fold_info.csv")
 
-        if fold_nr == 1:
-            self.train_dir_list = [f'{root_dir}/split2/', f'{root_dir}/split3/']
-            self.valid_dir_list = [f'{root_dir}/split1/']
+        wsi_names = np.array(fold_info.iloc[:, 0])
+        fold_info = np.array(fold_info.iloc[:, fold_nr])
 
-        elif fold_nr == 2:
-            self.train_dir_list = [f"{root_dir}/split1/", f"{root_dir}/split3/"]
-            self.valid_dir_list = [f"{root_dir}/split2/"]
-
-        elif fold_nr == 3:
-            self.train_dir_list = [f"{root_dir}/split1/", f"{root_dir}/split2/"]
-            self.valid_dir_list = [f"{root_dir}/split3/"]
+        wsi_train = wsi_names[fold_info==1]
+        wsi_valid = wsi_names[fold_info==2]
+        
+        self.train_list = []
+        for wsi_name in wsi_train:
+            self.train_list.append(f"{root_dir}/data/{wsi_name}{file_ext}")
+        
+        self.valid_list = []
+        for wsi_name in wsi_valid:
+            self.valid_list.append(f"{root_dir}/data/{wsi_name}{file_ext}")
 
 
 def get_dataset(name):
