@@ -36,9 +36,12 @@ pip install torch-geometric
 - `models`: scripts relating to defining the model, the hyperparameters and I/O configuration.
 - `run_utils`: main engine and callbacks.
 
-## Running the code
+## Graph Construction and Training
+Insert instructions on how to extract features and train the model
 
-Currently the code supports model inference and explanation. 
+## Inference and Explanation
+
+Insert general overview of inference and explanation
 
 - Run model inference: `python run_infer.py`
 
@@ -49,6 +52,19 @@ Currently the code supports model inference and explanation.
 - Get WSI-level explanations: `python run_explainer.py --wsi`
 
 Note, node and feature explanations must have been run before triggering wsi explanation.
+
+## Interactive Demo
+We have made an interactive demo to help visualise the output of our model. Note, this is not optimised for mobile phones and tablets. 
+
+Check out the demo [here](https://iguana.dcs.warwick.ac.uk). 
+
+In the demo, we provide multiple examples of WSI-level results. By default, glands are coloured by their node explanation score, indicating how much they contribute to the slide being predicted as abnormal. Glands can also be coloured by a specific feature using the drop-down menu on the right hand side.
+
+As you zoom in, smaller objects such as lumen and nuclei will become visible. These are accordingly coloured by their predicted class. For example, epithelial cells are coloured green and lymphocytes red.
+
+Each histological object can be toggled on/off by clicking the appropriate buton on the right hand side. Also, the colours and the opacity can be altered. 
+
+To see which histological features are contributing to glands being flagged as abnormal, hover over the corresponding node. To view these nodes, toggle the graph on at the bottom-right of the screen.
 
 ## To DO
 - [x] Inference code 
