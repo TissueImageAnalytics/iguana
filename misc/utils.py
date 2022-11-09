@@ -162,17 +162,13 @@ def get_local_feat_stats(file_list):
         local_perc_75
     )
 
-def get_pna_deg(data_list, file_ext, save_path):
+def get_pna_deg(file_list, save_path):
     """Compute the maximum in-degree in the training data. Only needed for PNA Conv."""
 
     from dataloader.graph_loader import FileLoader
     from torch_geometric.utils import degree
 
     print("Computing maximum node degree for PNA conv...")
-
-    file_list = []
-    for dir_name in data_list:
-        file_list.extend(glob.glob("%s/*%s" % (dir_name, file_ext)))
 
     input_dataset = FileLoader(file_list, feat_stats=None, norm=None, data_clean=None)
     
@@ -186,7 +182,8 @@ def get_pna_deg(data_list, file_ext, save_path):
     for data in input_dataset:
         d = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
         deg += torch.bincount(d, minlength=deg.numel())
-    np.save(f"{save_path}/deg.npy", deg)
+        
+    np.save(f"{save_path}/node_deg.npy", deg)
 
 
 def ranking_loss(pred, true):
@@ -252,6 +249,7 @@ def refine_files(file_list, wsi_info):
                 refined_list.append(filename)
     
     return refined_list
+
 
 def get_focus_tissue(wsi_path, tissuetype, results_gland, nr_classes=9, mode="lp", ds_factor=8):
     """Get non-glandular area within the issue which is considered for cell quantification. For

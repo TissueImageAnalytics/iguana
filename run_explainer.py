@@ -15,6 +15,7 @@ Options:
   --node            Whether to compute node explanation         
   --feature         Whether to compute feature explanation
   --wsi             Whether to compute wsi explanation - must have performed node and feature explanation!
+  
 """
 
 import os
@@ -47,6 +48,8 @@ def score_to_percentile(scores):
         score_single /= 100
         mask.append(score_single)
     return np.array(mask)
+
+
 class Explainer(object):
     def __init__(
         self, 
@@ -104,7 +107,7 @@ class Explainer(object):
     
     def __load_model(self):
         """Create the model, load the checkpoint and define
-        associated run steps to process each data batch
+        associated run steps to process each data batch.
 
         """
         model_desc = import_module('models.net_desc')
@@ -134,7 +137,7 @@ class Explainer(object):
 
     def run(self, data_list):
         """Run Explainer."""
-
+        
         # get running list of top features and feature importances
         top_feats_list = []
         top_imports_list = []
@@ -158,13 +161,11 @@ class Explainer(object):
              
             edge_index = graph_data.edge_index
             feats = graph_data.x
-            # global_feats = graph_data.global_feats
             batch = graph_data.batch
-            slide_ids = graph_data.wsi_info[0][:, 1]
+            obj_ids = graph_data.obj_id
 
             edge_index = edge_index.to("cuda").type(torch.long)
             feats = feats.to("cuda").type(torch.float32)
-            # global_feats = global_feats.to("cuda").type(torch.float32)
             batch = batch.to("cuda").type(torch.int64)
 
             if self.run_explain_node:
@@ -211,7 +212,7 @@ class Explainer(object):
                     node_mask = np.random.rand(nr_nodes)
                 
                 # save node explanations!
-                output_node_exp = {"obj_id": slide_ids.tolist(), "node_exp": node_mask}
+                output_node_exp = {"obj_id": obj_ids.tolist(), "node_exp": node_mask}
                 joblib.dump(output_node_exp, f"{self.output_path_node}/{wsi_name}.dat")
 
             if self.run_explain_feats:
@@ -249,7 +250,7 @@ class Explainer(object):
                 
                 # save feat explanations!
                 # also save original features for easy retrieval
-                output_feat_exp = {"obj_id": slide_ids.tolist(), "feat_exp": feature_mask, "feats": feats.cpu().detach().numpy()}
+                output_feat_exp = {"obj_id": obj_ids.tolist(), "feat_exp": feature_mask, "feats": feats.cpu().detach().numpy()}
                 joblib.dump(output_feat_exp, f"{self.output_path_feats}/{wsi_name}.dat")            
 
             if self.run_explain_graph:
@@ -316,6 +317,7 @@ class Explainer(object):
         
         return wsi_list, top_feats_list, top_imports_list
 
+#-------------------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     args = docopt(__doc__, version="IGUANA explain v1.0")
@@ -394,4 +396,5 @@ if __name__ == "__main__":
         if not os.path.exists(output_path_topfeats):
             rm_n_mkdir(output_path_topfeats)
         joblib.dump(top_feats_dict, f"{output_path_topfeats}/top_features.dat")
+        
     print('DONE!')

@@ -53,6 +53,7 @@ def get_labels_scores(wsi_names, scores, gt, binarize=True):
             scores_output.append(score)
     return labels_output, scores_output
 
+
 class InferBase(object):
     def __init__(self, **kwargs):
         self.run_step = None
@@ -80,9 +81,7 @@ class InferBase(object):
         return
 
 
-####
 class Infer(InferBase):
-
     def __run_model(self, file_list):
 
         print('Loading feature statistics...')
@@ -121,7 +120,7 @@ class Infer(InferBase):
 
             prob = batch_output['prob']
             true = batch_output['true']
-            wsi_info = batch_output['wsi_info']
+            wsi_name = batch_output['wsi_name']
             num_examples = len(batch_output['true'])
             
             for idx in range(num_examples):
@@ -131,7 +130,7 @@ class Infer(InferBase):
                 pred_list.append(pred_tmp.cpu())
                 prob_list.append(prob_tmp.cpu())
                 true_list.append(true_tmp.cpu())
-                wsi_name_list.append(wsi_info[0][idx][0])
+                wsi_name_list.append(wsi_name)
 
             pred_all.extend(pred_list)
             prob_all.extend(prob_list)
@@ -149,7 +148,6 @@ class Infer(InferBase):
         # AUC-PR
         pr, re, _ = precision_recall_curve(true, prob)
         auc_pr = auc(re, pr)
-        
         # specificity @ given sensitivity
         spec_95, spec_97, spec_98, spec_99, spec_100 = get_sens_spec_metrics(true, prob)
         
@@ -198,14 +196,15 @@ if __name__ == '__main__':
     stats_path = "/root/lsf_workspace/iguana_data/stats/"
     
     output_path = "output_test/"
-        
+    
+    #TODO Batch size must be set at 1 at the moment - fix this!
     args = {
         "model_name": model_name,
         "model_path": f"{ckpt_root}/iguana_fold{fold_nr}.tar",
         "stats_path": stats_path,
         "data_path": data_dir,
         "gt_path": f"{gt_root}/{dataset_name}_gt.csv",
-        "batch_size": int(args["--batch_size"]), #! do not change
+        "batch_size": int(args["--batch_size"]), 
         "nr_procs": int(args["--num_workers"]),
         "output_path": output_path,
     }
