@@ -92,7 +92,6 @@ python run_train.py --gpu=<gpu_id> --device=<device> --compute_stats --compute_d
 - `device`: either `cpu` or `cuda`.
 - `compute_stats`: whether to compute statistics of all features in the dataset. This only need to be performed once for each dataset as it is quite time-consuming.
 - `compute_deg`: PNA convolution uses the node degree information. Therefore, only consider this is using PNA. Again, only use this once per dataset as it can be time-consuming.
-- `deg_path`: Path to where node degree info is located. If `compute_deg` is toggled on, then this will be the save path. 
 
 Note, the directory where training logs are saved is set in `config.py`. Here, you can also set the name of the experiment run with `exp_nr`.
 
