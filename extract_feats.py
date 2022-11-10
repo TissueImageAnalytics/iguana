@@ -157,14 +157,15 @@ def extract_features(
             nuclei_info = all_info["Nuclei"]
         else:
             nuclei_info = {}
-        proc_resolution = all_info["proc_dimensions"]
+        # proc_resolution = all_info["proc_dimensions"]
         del all_info
 
         # read the tissue mask
         tissue_mask = cv2.imread(f"{mask_path}/{wsi_name}.png", 0)
         tissue_mask_shape = tissue_mask.shape
 
-        mask_ds_factor = tissue_mask_shape[0] / proc_resolution[0]
+        # mask_ds_factor = tissue_mask_shape[0] / proc_resolution[0]
+        mask_ds_factor = 0.125
         
         tissue_type_mask = cv2.imread(f"{tissue_type_path}/{wsi_name}.png", 0)
         # read the segmentation maps
@@ -729,9 +730,8 @@ if __name__ == "__main__":
         basename = os.path.basename(input_file)
         wsi_name = basename[:-4]
         save_path = output_path + wsi_name
-        if wsi_name == "H17-71023_D1RIBH17-71023D11RIB_1":
-            if not os.path.exists(f"{save_path}/local_feats.csv"):
-                input_files.append(input_file)
+        if not os.path.exists(f"{save_path}/local_feats.csv"):
+            input_files.append(input_file)
 
     # create output directory
     if not os.path.exists(output_path):
