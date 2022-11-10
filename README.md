@@ -3,7 +3,6 @@
 </p>
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-orange.svg)](https://www.gnu.org/licenses/gpl-3.0)
-  <br><br>
   <a href="#cite-this-repository"><img src="https://img.shields.io/badge/Cite%20this%20repository-BibTeX-brightgreen" alt="DOI"></a> <a href="https://doi.org/10.1101/2022.10.17.22279804"><img src="https://img.shields.io/badge/DOI-10.1101%2F2022.10.17.22279804-blue" alt="DOI"></a>
 <br>
 
