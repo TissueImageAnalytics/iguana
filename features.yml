@@ -1,0 +1,29 @@
+ # below are the selected features used within the framework
+ # look at the complete list of features obtained after running extract_feats.py in features_all.yml
+
+features: 
+- gland_bam
+- gland-area
+- lumen-number
+- lumen-gland_ratio
+- lumen-bam-mean
+- nuclei-gland-epi-count
+- nuclei-gland-lym-count
+- nuclei-gland-plas-count
+- nuclei-gland-neut-count
+- nuclei-gland-eos-count
+- nuclei-gland-nuc-count
+- nuclei-inter-epi-mean
+- nuclei-inter-epi-std
+- nuclei-dist-boundary-mean
+- nuclei-dist-boundary-std
+- nuclei-dist-lumen-mean
+- nuclei-dist-lumen-std
+- nuclei-area-mean
+- nuclei-area-std
+- nuclei-focus-lym-density
+- nuclei-focus-plas-density
+- nuclei-focus-neut-density
+- nuclei-focus-eos-density
+- nuclei-focus-conn-density
+- nuclei-inf-density
