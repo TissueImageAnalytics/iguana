@@ -120,7 +120,7 @@ Insert general overview of inference and explanation
 Note, node and feature explanations must have been run before triggering wsi explanation.
 
 ## Interactive Demo
-We have made an interactive demo to help visualise the output of our model. Note, this is not optimised for mobile phones and tablets. 
+We have made an interactive demo to help visualise the output of our model. Note, this is not optimised for mobile phones and tablets. The demo was built using the TIAToolbox [tile server](https://tia-toolbox.readthedocs.io/en/latest/_autosummary/tiatoolbox.visualization.tileserver.TileServer.html).
 
 Check out the demo [here](https://iguana.dcs.warwick.ac.uk). 
 
