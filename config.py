@@ -24,12 +24,12 @@ class Config(object):
 
         # log directory where checkpoints are saved
         exp_nr = "v1.0"
-        log_root = "/root/lsf_workspace/output/gland_graphs/logs"
+        log_root = "logs"
         self.log_dir = f"{log_root}/{self.model_name}/fold{fold_nr}/{exp_nr}/" 
         
         # get the subset of feature names that will be considered by the GNN
         with open("features.yml") as fptr:
-            self.feat_names = list(yaml.full_load(fptr).values())
+            self.feat_names = list(yaml.full_load(fptr).values())[0]
 
         # * parsing config to the running state and set up associated variables
         self.dataset = get_dataset(self.dataset_name)
