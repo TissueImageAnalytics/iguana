@@ -37,7 +37,73 @@ pip install torch-geometric
 - `run_utils`: main engine and callbacks.
 
 ## Graph Construction and Training
-Insert instructions on how to extract features and train the model
+
+### Histological Segmentation
+As a first step, WSIs need to be processed with Cerberus to perform simultaneous prediction of:
+- Nuclear segmentation and classification
+- Gland segmentation and classification
+- Lumen segmentation
+- Tissue type classification
+
+Refer to [this repository](https://github.com/TissueImageAnalytics/cerberus) for details on how to run Cerberus.
+
+### Feature Extraction
+To perform feature extraction run `extract-feats.py`. To see a full list of command line arguments, use:
+
+```
+python extract_feats.py -h
+```
+
+You will see that one of the arguments is `focus_mode`. This denotes the non-epithelial area considered for cell quantification. For the original publication, we considered the lamina propria (`focus_mode=lp`) which is the area surrounding the glands. If `lp` is not selected, then the entire tissue is considered for cell quantification.
+
+### Constructing the Graphs
+Next, we convert the features into a format to be used by our graph learning model. Here, we also fill in missing values (denoted by `nan`).
+
+To do this, run:
+
+```
+python create_graph.py --input_path=<path> --output_path=<path> --dist_thresh=<n> --data_info=<path>
+```
+
+- `input_path`: path to features extracted using `extract_feats.py`.
+- `output_path`: path to where graph data will be saved.
+- `dist_thresh`: only connect glands if they are within a distance less than this threshold. 
+- `data_info`: information regarding the labels and fold info of the data. More info on this is provided when describing [model training](#training-the-model).
+
+The above command converts the data to a dictionary with the following keys:
+
+- `local_feats`: a dictionary where each key denotes the feature name and the corresponding values denote the features. Note, in this dictionary we also include the `obj_id`, which represents the unique identifier of each gland (as originally used in the Cerberus output).
+- `edge_index`: 2xN array of indicies showing the presence of edges between nodes.
+- `label`: The label of the graph.
+- `wsi_name`: Filename of the WSI.
+
+### Training the Model
+To trigger training, use:
+
+```
+python run_train.py --gpu=<gpu_id> --device=<device> --compute_stats --compute_deg --deg_path=<path>
+```
+
+- `gpu`: a comma separated list indicating the GPUs in which to run the model on.
+- `device`: either `cpu` or `cuda`.
+- `compute_stats`: whether to compute statistics of all features in the dataset. This only need to be performed once for each dataset as it is quite time-consuming.
+- `compute_deg`: PNA convolution uses the node degree information. Therefore, only consider this is using PNA. Again, only use this once per dataset as it can be time-consuming.
+- `deg_path`: Path to where node degree info is located. If `compute_deg` is toggled on, then this will be the save path. 
+
+Note, the directory where training logs are saved is set in `config.py`. Here, you can also set the name of the experiment run with `exp_nr`.
+
+Additional hyperparameters, such as number of epochs and learning rate are set in `models/opt.py`.
+
+All data info should be included in `dataset.py`. For your own dataset, you will need to create your own class! The code will expect that for each dataset, a corresponding `data_info` csv file is provided. The path to this file should be included in the relevant class in `dataset.py`. The csv file should have the following columns (**also ensure the same order**):
+
+- `wsi_name`
+- `fold_1`
+- ...
+- `fold_n`
+- `label`
+
+So, if considering 5 folds, then you will need to have 5 columns following `wsi_name`. `label` must be the final column. Within each fold column, 1 indicates training, 2 validation and 3 test. If not using cross-validation, then simply use a single column.
+
 
 ## Inference and Explanation
 
@@ -66,7 +132,8 @@ Each histological object can be toggled on/off by clicking the appropriate buton
 
 To see which histological features are contributing to glands being flagged as abnormal, hover over the corresponding node. To view these nodes, toggle the graph on at the bottom-right of the screen.
 
-## To DO
-- [x] Inference code 
-- [ ] Training code 
-- [ ] Notebooks
+## License
+
+Code is under a GPL-3.0 license. See the [LICENSE](https://github.com/TissueImageAnalytics/cerberus/blob/master/LICENSE) file for further details.
+
+Model weights are licensed under [Attribution-NonCommercial-ShareAlike 4.0 International](http://creativecommons.org/licenses/by-nc-sa/4.0/). Please consider the implications of using the weights under this license. 
