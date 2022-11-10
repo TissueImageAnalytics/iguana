@@ -2,6 +2,11 @@
   <img src="doc/iguana.png">
 </p>
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-orange.svg)](https://www.gnu.org/licenses/gpl-3.0)
+  <br><br>
+  <a href="#cite-this-repository"><img src="https://img.shields.io/badge/Cite%20this%20repository-BibTeX-brightgreen" alt="DOI"></a> <a href="https://doi.org/10.1101/2022.10.17.22279804"><img src="https://img.shields.io/badge/DOI-10.1101%2F2022.10.17.22279804-blue" alt="DOI"></a>
+<br>
+
 # Interpretable Gland-Graph Networks using a Neural Aggregator
 
 IGUANA is a graph neural network built for colon biopsy screening. IGUANA represents a whole-slide image (WSI) as a graph built with nodes on top of glands in the tissue, each node associated with a set of interpretable features. The output of the pipeline is explainable, indicating glands and features that contribute to a WSI being predicted as abnormal. 
@@ -139,3 +144,15 @@ To see which histological features are contributing to glands being flagged as a
 Code is under a GPL-3.0 license. See the [LICENSE](https://github.com/TissueImageAnalytics/cerberus/blob/master/LICENSE) file for further details.
 
 Model weights are licensed under [Attribution-NonCommercial-ShareAlike 4.0 International](http://creativecommons.org/licenses/by-nc-sa/4.0/). Please consider the implications of using the weights under this license. 
+
+## Cite this repository
+
+```
+@article{graham2022screening,
+  title={Screening of normal endoscopic large bowel biopsies with artificial intelligence: a retrospective study},
+  author={Graham, Simon and Minhas, Fayyaz and Bilal, Mohsin and Ali, Mahmoud and Tsang, Yee Wah and Eastwood, Mark and Wahab, Noorul and Jahanifar, Mostafa and Hero, Emily and Dodd, Katherine and others},
+  journal={medRxiv},
+  year={2022},
+  publisher={Cold Spring Harbor Laboratory Press}
+}
+```
