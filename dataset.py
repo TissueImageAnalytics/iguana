@@ -11,14 +11,17 @@ class __CoBi(object):
     def __init__(self, fold_nr):
 
         file_ext = ".dat"
-        root_dir = '/mnt/gpfs01/lsf-workspace/tialab-simon/graph_data/cobi/graph_data_refined'
+        root_dir = 'test_data/'
+        
+        self.stats_path = f"{root_dir}/stats"
+        
         self.all_data = glob.glob(f"{root_dir}/data/*{file_ext}")
         
         # csv file - 1st column indicates the WSI name and each subsequent column gives the fold info
         # eg column 2 gives the info for fold1, column 3, gives the info for fold2, etc 
         # for fold info: 1 denotes training, 2 denotes validation and 3 denotes testing
         # if the dataset is an independent test set, use 1 fold info column, with all cells set to 3
-        fold_info = pd.read_csv(f"{root_dir}/fold_info.csv")
+        fold_info = pd.read_csv(f"{root_dir}/data_info.csv")
 
         wsi_names = np.array(fold_info.iloc[:, 0])
         fold_info = np.array(fold_info.iloc[:, fold_nr])

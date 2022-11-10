@@ -1,4 +1,3 @@
-import numpy as np
 from typing import Optional
 
 import torch
@@ -12,7 +11,6 @@ from torch_geometric.nn import (
     PNAConv, 
     EdgeConv, 
     GATConv,
-    GlobalAttention,
     global_mean_pool, 
 )
 from torch_geometric.utils import softmax
@@ -31,13 +29,13 @@ def weights_init(m):
 
 class GlobalAtt(torch.nn.Module):
     """GlobalAttenion but returning the attention scores."""
-    def __init__(self, gate_nn, nn=None):
-        super(GlobalAttention, self).__init__()
+    def __init__(self, gate_nn, nn):
+        super().__init__()
         self.gate_nn = gate_nn
         self.nn = nn
-
+        
         self.reset_parameters()
-
+    
     def reset_parameters(self):
         reset(self.gate_nn)
         reset(self.nn)
@@ -231,6 +229,8 @@ class NetDesc(nn.Module):
         self.use_edges = use_edges
         self.agg = agg
         self.return_prob = return_prob
+        
+        node_degree = torch.Tensor(node_degree)
 
         if model_name == "graphsage":
             self.gconv1 = GraphSageLayer(nhid[0], nhid[1])

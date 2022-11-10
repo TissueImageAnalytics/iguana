@@ -28,14 +28,6 @@ def train_step(batch_data, run_info, device="cuda"):
     feats = batch_data.x
     label = batch_data.y
 
-    #! the first 2 columns are the wsi name and object ids, respectively. 
-    #! Need to be dropped before passing to GCN!
-    # feats = feats[: 2:]
-
-    # data is 3-class -> convert to 2 class (normal vs abnormal)
-    label_orig = label.clone()  # make copy of original 3 class label for evaluation
-    label[label > 1] = 1
-
     batch = batch.to(device).type(torch.int64)
     edge_index = edge_index.to(device).type(torch.long)
     feats = feats.to(device).type(torch.float32)
@@ -164,10 +156,10 @@ def proc_valid_step_output(raw_data):
     pred[pred >= 0.5] = 1
     pred[pred < 0.5] = 0
     true = np.array(true_list)
-    
+
     auc = roc_auc_score(true, prob)
 
-    _, _, spec_95, spec_97, spec_98, spec_99, spec_100 = get_sens_spec_metrics(true, prob)
+    spec_95, spec_97, spec_98, spec_99, spec_100 = get_sens_spec_metrics(true, prob)
 
     track_value("AUC-ROC", auc, "scalar")
     track_value("Specifity_at_95_Sensitivity", spec_95, "scalar")

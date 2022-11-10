@@ -13,14 +13,21 @@ class FileLoader(torch.utils.data.Dataset):
         self.feat_stats = feat_stats
         self.feat_names = feat_names
         
+        if feat_stats is not None:
+            self.mean_stats = np.array([feat_stats["mean"][k] for k in self.feat_names])
+            self.median_stats = np.array([feat_stats["median"][k] for k in self.feat_names])
+            self.std_stats = np.array([feat_stats["std"][k] for k in self.feat_names])
+            self.perc_25_stats= np.array([feat_stats["perc_25"][k] for k in self.feat_names])
+            self.perc_75_stats= np.array([feat_stats["perc_75"][k] for k in self.feat_names])
+        
         # get lower and upper bounds for clipping data (outlier removal)
         if data_clean == 'std':
-            self.local_lower_bounds = feat_stats[0][self.local_feats_idx] - 3 * feat_stats[2][self.local_feats_idx]
-            self.local_upper_bounds = feat_stats[0][self.local_feats_idx] + 3 * feat_stats[2][self.local_feats_idx]
+            self.local_lower_bounds = self.mean_stats - 3 * self.std_stats
+            self.local_upper_bounds = self.mean_stats + 3 * self.std_stats
         elif data_clean == 'iqr':
-            iqr = feat_stats[4][self.local_feats_idx] - feat_stats[3][self.local_feats_idx]
-            self.local_lower_bounds = feat_stats[3][self.local_feats_idx] - 2 * iqr
-            self.local_upper_bounds = feat_stats[4][self.local_feats_idx] + 2 * iqr
+            iqr = self.perc_75_stats - self.perc_25_stats
+            self.local_lower_bounds = self.perc_25_stats - 2 * iqr
+            self.local_upper_bounds = self.perc_75_stats + 2 * iqr
 
         self.norm = norm
 
@@ -41,15 +48,16 @@ class FileLoader(torch.utils.data.Dataset):
         data = joblib.load(path)
 
         edge_index = np.array(data["edge_index"])
-        feats = np.array(data["local_feats"])
+        feats = data["local_feats"]
         
         nr_local_feats = len(self.feat_names)
-        
-        feats_sub = dict((k, feats[k]) for k in self.feat_names if k in feats) # get subset of features
-        feats_sub = np.array(list(feats_sub.values())).astype("float32") # convert to array
-        wsi_name = feats["wsi_name"]
-        obj_id = feats["obj_id"]
 
+        feats_sub = dict((k, feats[k]) for k in self.feat_names) # get subset of features
+        feats_sub = np.array(list(feats_sub.values())).astype("float32") # convert to array
+        feats_sub = np.transpose(feats_sub) # ensure NxF
+        wsi_name = data["wsi_name"]
+        obj_id = feats["obj_id"]
+    
         # clean up data - deal with outliers!
         if self.data_clean is not None:
             # local feats
@@ -63,22 +71,12 @@ class FileLoader(torch.utils.data.Dataset):
 
         # normalise the feature subset
         if self.norm == "standard":
-            # local feats
-            local_mean = self.feat_stats[0][self.local_feats_idx]
-            local_std = self.feat_stats[2][self.local_feats_idx]
-            feats_sub = ((feats_sub - local_mean) + 1e-8) / local_std + 1e-8
+            feats_sub = ((feats_sub - self.mean_stats) + 1e-8) / (self.std_stats + 1e-8)
         elif self.norm == "robust":
-            # local feats
-            local_median = self.feat_stats[1][self.local_feats_idx]
-            local_perc_25 = self.feat_stats[3][self.local_feats_idx]
-            local_perc_75 = self.feat_stats[4][self.local_feats_idx]
-            feats_sub = ((feats_sub - local_median) + 1e-8) / ((local_perc_75 - local_perc_25) + 1e-8)
+            feats_sub = ((feats_sub - self.median_stats) + 1e-8) / ((self.perc_75_stats - self.perc_25_stats) + 1e-8)
 
         label = np.array([data["label"]])
-
-        # data is 3-class -> convert to 2 class (normal vs abnormal)
-        # label[label > 1] = 1
-
+    
         x = torch.Tensor(feats_sub).type(torch.float)
         edge_index = torch.Tensor(edge_index).type(torch.long)
         label = torch.Tensor(label).type(torch.float)

@@ -112,57 +112,51 @@ def get_local_feat_stats(file_list):
         file_list: list of .dat files containing features
     
     """
-    # read the first file to get the number of features!
     feats_tmp = joblib.load(file_list[0])
-    nr_feats = feats_tmp["local_feats"].shape[-1]  # must be same number of features in each file
+    feat_names = list(feats_tmp["local_feats"].keys()) 
     del feats_tmp
 
     print("Getting local feature statistics...")
-    mean = []
-    median = []
-    std = []
-    perc_25 = []
-    perc_75 = []
-    for idx in range(nr_feats):
-        # first 2 indexes are not actually features (wsi name and object id)
-        if idx == 0 or idx == 1:
-            mean.append(0)
-            median.append(0)
-            std.append(0)
-            perc_25.append(0)
-            perc_75.append(0)
+    output_dict = {}
+    mean_dict = {}
+    median_dict = {}
+    std_dict = {}
+    perc_25_dict = {}
+    perc_75_dict = {}
+    for feat_name in feat_names:
+        if feat_name == "obj_id":
+            mean = 0.0
+            median = 0.0
+            std = 0.0
+            perc_25 = 0.0
+            perc_75 = 0.0
         else:
             accumulated_feats_tmp = []
             for filepath in file_list:
                 feats = joblib.load(filepath)["local_feats"]  # hard assumption on .dat file
-                feats = feats[:, idx].tolist()
+                feats = feats[feat_name].tolist()
                 accumulated_feats_tmp.extend(np.float32(feats))
-            mean.append(np.nanmean(np.array(accumulated_feats_tmp)))
-            median.append(np.nanmedian(np.array(accumulated_feats_tmp)))
-            std.append(np.nanstd(np.array(accumulated_feats_tmp)))
-            perc_25.append(np.nanpercentile(np.array(accumulated_feats_tmp), q=25))
-            perc_75.append(np.nanpercentile(np.array(accumulated_feats_tmp), q=75))
+            mean = float(np.nanmean(np.array(accumulated_feats_tmp)))
+            median = float(np.nanmedian(np.array(accumulated_feats_tmp)))
+            std = float(np.nanstd(np.array(accumulated_feats_tmp)))
+            perc_25 = float(np.nanpercentile(np.array(accumulated_feats_tmp), q=25))
+            perc_75 = float(np.nanpercentile(np.array(accumulated_feats_tmp), q=75))
+        
+        mean_dict[feat_name] = mean
+        median_dict[feat_name] = median
+        std_dict[feat_name] = std
+        perc_25_dict[feat_name] = perc_25
+        perc_75_dict[feat_name] = perc_75
 
-    del accumulated_feats_tmp
+    output_dict["mean"] = mean_dict
+    output_dict["median"] = median_dict
+    output_dict["std"] = std_dict
+    output_dict["perc_25"] = perc_25_dict
+    output_dict["perc_75"] = perc_75_dict
+    
+    return output_dict
 
-    # convert to numpy array
-    local_mean = np.array(mean)
-    local_median = np.array(median)
-    local_std = np.array(std)
-    local_perc_25 = np.array(perc_25)
-    local_perc_75 = np.array(perc_75)
-
-    print('Done!')
-
-    return (
-        local_mean, 
-        local_median, 
-        local_std, 
-        local_perc_25, 
-        local_perc_75
-    )
-
-def get_pna_deg(file_list, save_path):
+def get_pna_deg(file_list, feat_names, save_path):
     """Compute the maximum in-degree in the training data. Only needed for PNA Conv."""
 
     from dataloader.graph_loader import FileLoader
@@ -170,7 +164,7 @@ def get_pna_deg(file_list, save_path):
 
     print("Computing maximum node degree for PNA conv...")
 
-    input_dataset = FileLoader(file_list, feat_stats=None, norm=None, data_clean=None)
+    input_dataset = FileLoader(file_list, feat_names, feat_stats=None, norm=None, data_clean=None)
     
     max_degree = -1
     for data in input_dataset:

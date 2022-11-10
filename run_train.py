@@ -14,15 +14,8 @@ Options:
   --device=<str>        Device in which to run the mode on. Choose `cuda` or `cpu`. [default: cuda]
   --compute_stats       Whether to compute local statistics - used for normalising input data. 
   --compute_deg         Whether to compute node degree - needed for PNA graph convolution.
-  --deg_path=<path>     Save location when computing the node degree. [default: node_deg/]
   
 """
-
-import dataloader.graph_loader as graph_loader
-from misc.utils import get_pna_deg, rm_n_mkdir, get_local_feat_stats
-from run_utils.utils import check_manual_seed, colored
-from run_utils.engine import RunEngine
-from config import Config
 
 import torch_geometric
 from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
@@ -31,10 +24,16 @@ from tensorboardX import SummaryWriter
 import json
 import os
 import inspect
-import glob
+import yaml
 import numpy as np
 from docopt import docopt
 import cv2
+
+import dataloader.graph_loader as graph_loader
+from misc.utils import get_pna_deg, rm_n_mkdir, get_local_feat_stats
+from run_utils.utils import check_manual_seed, colored
+from run_utils.engine import RunEngine
+from config import Config
 
 cv2.setNumThreads(0)
 
@@ -61,11 +60,14 @@ class TrainManager(Config):
         super().__init__()
         self.model_config = self.model_config_file.__getattribute__("train_config")
         self._parse_args(args)
+        
+        if not os.path.exists(self.dataset.stats_path):
+            rm_n_mkdir(self.dataset.stats_path)
 
         if self.model_name == "pna":
             if self.compute_deg:
-                get_pna_deg(self.dataset.all_data, self.deg_path)
-            self.node_degree = np.load(f"{self.deg_path}/node_deg.npy")
+                get_pna_deg(self.dataset.all_data, self.feat_names, self.dataset.stats_path)
+            self.node_degree = np.load(f"{self.dataset.stats_path}/node_deg.npy")
         else:
             self.node_degree = None
 
@@ -85,11 +87,11 @@ class TrainManager(Config):
         fold_idx=0,
         compute_stats=None
     ):
-        all_data_list = self.train_list + self.valid_list
+        all_data_list = self.dataset.train_list + self.dataset.valid_list
         if run_mode == "train":
-            file_list = self.train_list
+            file_list = self.dataset.train_list
         else:
-            file_list = self.valid_list
+            file_list = self.dataset.valid_list
         file_list.sort()  # ensure same input ordering
 
         assert len(file_list) > 0, (
@@ -99,26 +101,17 @@ class TrainManager(Config):
         print("Dataset %s: %d" % (run_mode, len(file_list)))
 
         if compute_stats:
-            local_mean, local_median, local_std, local_perc_25, local_perc_75 = get_local_feat_stats(all_data_list)
-            np.save(f"{self.data_path}/local_mean.npy", local_mean)
-            np.save(f"{self.data_path}/local_median.npy", local_median)
-            np.save(f"{self.data_path}/local_std.npy", local_std)
-            np.save(f"{self.data_path}/local_perc_25.npy", local_perc_25)
-            np.save(f"{self.data_path}/local_perc_75.npy", local_perc_75)
+            stats_dict = get_local_feat_stats(all_data_list)
+            with open(f"{self.dataset.stats_path}/stats_dict.yml", "w") as fptr:
+                yaml.dump(stats_dict, fptr, default_flow_style=False)
+            
         else:
             print('Loading feature statistics...')
-            local_mean = np.load(f"{self.data_path}/local_mean.npy")
-            local_median = np.load(f"{self.data_path}/local_median.npy")
-            local_std = np.load(f"{self.data_path}/local_std.npy")
-            local_perc_25 = np.load(f"{self.data_path}/local_perc_25.npy")
-            local_perc_75 = np.load(f"{self.data_path}/local_perc_75.npy")
-
-        feat_stats = [
-            local_mean, local_median, local_std, local_perc_25, local_perc_75
-        ]
+            with open(f"{self.dataset.stats_path}/stats_dict.yml") as fptr:
+                stats_dict = yaml.full_load(fptr)
 
         input_dataset = graph_loader.FileLoader(
-            file_list, self.feat_name, feat_stats=feat_stats, norm="standard", data_clean="std"
+            file_list, self.feat_names, feat_stats=stats_dict, norm="standard", data_clean="std"
         )
 
         dataloader = torch_geometric.loader.DataLoader(
@@ -167,14 +160,15 @@ class TrainManager(Config):
         # parsing the network and optimizer information
         net_run_info = {}
         net_info_opt = opt["run_info"]
+
         for net_name, net_info in net_info_opt.items():
             assert inspect.isclass(net_info["desc"]) or inspect.isfunction(
                 net_info["desc"]
             ), "`desc` must be a Class or Function which instantiate NEW objects !!!"
             net_desc = net_info["desc"](
-                model_name=self.model_name, 
-                nr_features=len(self.feat_names), 
-                node_degree=self.node_degree
+                self.model_name, 
+                len(self.feat_names), 
+                self.node_degree
                 )
 
             pretrained_path = net_info["pretrained"]

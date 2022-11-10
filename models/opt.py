@@ -24,10 +24,10 @@ train_config = {
                 # may need more dynamic for each network
                 "net": {
                     # model name and number of features retrieved from config
-                    "desc": lambda: create_model(
-                        model_name=None, 
-                        nr_features=None,
-                        node_degree=None),
+                    "desc": lambda x,y,z : create_model(
+                        model_name=x, 
+                        nr_features=y,
+                        node_degree=z),
                     "optimizer": [
                         optim.Adam,
                         {  # should match keyword for parameters within the optimizer
@@ -46,7 +46,8 @@ train_config = {
             },
             "nr_types": None,
             "target_info": {"gen": None, "viz": None},
-            "batch_size": {"train": 64, "valid": 64,},  # engine name : value
+            # "batch_size": {"train": 64, "valid": 64,},
+            "batch_size": {"train": 4, "valid": 4,},
             "nr_epochs": 60,
         },
     ],
