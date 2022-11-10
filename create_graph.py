@@ -3,7 +3,7 @@
 Generates a graph along with node-level features from a WSI and it's instance-level mask.
 
 Usage:
-  create_graph.py [--input_dir=<path>] [--output_dir=<path>] [--dist_thresh=<n>] [--k=<n>] [--data_info==<path>] [--save_graph]
+  create_graph.py [--input_dir=<path>] [--output_dir=<path>] [--dist_thresh=<n>] [--k=<n>] [--data_info==<path>]
   create_graph.py (-h | --help)
   create_graph.py --version
 
@@ -14,7 +14,6 @@ Options:
   --output_dir=<path>   Path where graph data will be saved.
   --dist_thresh=<n>     Only connect nodes if the distance between them is below a threshold [default: 500]
   --data_info=<path>    Data csv file containing fold information and labels.
-  --save_graph          Whether to save the connected graph each time.
   
 """
 
@@ -25,22 +24,26 @@ import pandas as pd
 import numpy as np
 from docopt import docopt
 
+from misc.utils import rm_n_mkdir
+
 
 def preprocess_local_feats(feats, fill_mode="mean"):
     """Preprocess local feats. Fill in nan values."""
 
     output_feats = {} # output deals with missing values (denoted as nan)
-    for feat_name, feats_vals in feats.items():
-        if fill_mode == "mean":
-            fill = np.nanmean(feats_vals)
-        elif fill_mode == "median":
-            fill = np.nanmedian(feats_vals)
-        elif fill_mode == "zeros":
-            fill = 0
-        
-        # fill nans
-        feats_vals[np.isnan(feats_vals)] = fill 
-        output_feats[feat_name] = feats_vals
+    for feat_name, feat_vals in feats.items():
+        feat_vals = np.array(feat_vals)
+        if feat_name != "obj_id":
+            if fill_mode == "mean":
+                fill = np.nanmean(feat_vals)
+            elif fill_mode == "median":
+                fill = np.nanmedian(feat_vals)
+            elif fill_mode == "zeros":
+                fill = 0
+            
+            # fill nans
+            feat_vals[np.isnan(feat_vals)] = fill 
+        output_feats[feat_name] = feat_vals
 
     return output_feats
 
@@ -80,7 +83,7 @@ def get_edge_index(dst_matrix, tissue_idx, dist_thresh):
 def construct_graphs(list_files, data_info, dist_thresh, output_path):
     """Construct graph."""
     
-    list_names = list(data_info["wsi_id"])
+    list_names = list(data_info["wsi_name"])
     for filename in list_files:
         local_feats = f"{filename}/local_feats.dat"
         dst_matrix = f"{filename}/dst_matrix.npy"
@@ -88,7 +91,7 @@ def construct_graphs(list_files, data_info, dist_thresh, output_path):
         if os.path.isfile(local_feats) and os.path.isfile(dst_matrix) and os.path.isfile(tissue_idx):
             wsi_name = os.path.basename(filename)
             if wsi_name in list_names:
-                label = int(data_info[data_info["label"] == wsi_name].label_id)
+                label = int(data_info[data_info["wsi_name"] == wsi_name].label)
                 # check if file exists - folder may have been created without generating features!
                 if os.path.isfile(local_feats):
                     # make sure graph has not already been constructed
@@ -107,19 +110,22 @@ def construct_graphs(list_files, data_info, dist_thresh, output_path):
                         data = {"local_feats": local_feats_proc, "edge_index": edge_index, "label": label, "wsi_name": wsi_name}
                         joblib.dump(data, f"{output_path}/{wsi_name}.dat")
 
+
 #---------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
     args = docopt(__doc__)
 
     dist_thresh = int(args['--dist_thresh'])
-    save_graph = args['--save_graph']
-    
     input_files = args["--input_dir"]
     output_path = args["--output_dir"]
     data_info = pd.read_csv(args["--data_info"])
 
     list_files = glob.glob(input_files + "*")
+    
+    # create output directory
+    if not os.path.exists(output_path):
+        rm_n_mkdir(output_path)
 
     construct_graphs(list_files, data_info, dist_thresh, output_path)
 

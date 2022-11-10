@@ -1,7 +1,6 @@
 import numpy as np
 import joblib
 import torch
-import yaml
 
 from torch_geometric.data import Data
 
@@ -12,6 +11,7 @@ class FileLoader(torch.utils.data.Dataset):
     def __init__(self, file_list, feat_names, feat_stats, norm, data_clean):
         self.file_list = file_list
         self.feat_stats = feat_stats
+        self.feat_names = feat_names
         
         # get lower and upper bounds for clipping data (outlier removal)
         if data_clean == 'std':
@@ -45,7 +45,8 @@ class FileLoader(torch.utils.data.Dataset):
         
         nr_local_feats = len(self.feat_names)
         
-        feats_sub = feats[:, self.local_feats_idx].astype('float32') #! this isn't the right way of subsetting a dict
+        feats_sub = dict((k, feats[k]) for k in self.feat_names if k in feats) # get subset of features
+        feats_sub = np.array(list(feats_sub.values())).astype("float32") # convert to array
         wsi_name = feats["wsi_name"]
         obj_id = feats["obj_id"]
 
