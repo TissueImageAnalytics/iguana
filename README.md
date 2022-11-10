@@ -132,6 +132,8 @@ Each histological object can be toggled on/off by clicking the appropriate buton
 
 To see which histological features are contributing to glands being flagged as abnormal, hover over the corresponding node. To view these nodes, toggle the graph on at the bottom-right of the screen.
 
+![demo](https://user-images.githubusercontent.com/20071401/201095785-d7ce01c3-9652-425e-b1cd-38dd22672b81.gif)
+
 ## License
 
 Code is under a GPL-3.0 license. See the [LICENSE](https://github.com/TissueImageAnalytics/cerberus/blob/master/LICENSE) file for further details.
