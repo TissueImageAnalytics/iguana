@@ -27,6 +27,11 @@ def train_step(batch_data, run_info, device="cuda"):
     edge_index = batch_data.edge_index
     feats = batch_data.x
     label = batch_data.y
+    
+    #! below is specific to CoBi!
+    # data is 3-class -> convert to 2 class (normal vs abnormal)
+    label_orig = label.clone()  # make copy of original 3 class label for evaluation
+    label[label > 1] = 1
 
     batch = batch.to(device).type(torch.int64)
     edge_index = edge_index.to(device).type(torch.long)
@@ -106,7 +111,7 @@ def infer_step(batch_data, model, device="cuda"):
     edge_index = batch_data.edge_index
     feats = batch_data.x
     label = batch_data.y
-    wsi_info = batch_data.wsi_info
+    wsi_name = batch_data.wsi_name
 
     # data is 3-class -> convert to 2 class (normal vs abnormal)
     label_orig = label.clone()  # make copy of original 3 class label for evaluation
@@ -127,7 +132,7 @@ def infer_step(batch_data, model, device="cuda"):
         node_scores = out_dict["node_scores"]
 
     # * Its up to user to define the protocol to process the raw output per step!
-    result_dict = {"true": label, "true_orig": label_orig, "prob": prob, "node_scores": node_scores, "wsi_info": wsi_info}
+    result_dict = {"true": label, "true_orig": label_orig, "prob": prob, "node_scores": node_scores, "wsi_name": wsi_name}
 
     return result_dict
 

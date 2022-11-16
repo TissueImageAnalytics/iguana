@@ -1,14 +1,14 @@
 features:
 - obj_id
-- gland_inflam_prop
-- gland_mucous_prop
-- gland_debris_prop
-- gland_normal_prop
-- gland_tumour_prop
-- gland_adipose_prop
-- gland_stroma_prop
-- gland_muscle_prop
-- gland_bam
+- gland-inflam-prop
+- gland-mucous-prop
+- gland-debris-prop
+- gland-normal-prop
+- gland-tumour-prop
+- gland-adipose-prop
+- gland-stroma-prop
+- gland-muscle-prop
+- gland-bam
 - gland-area
 - gland-perimeter
 - gland-equiv-diameter
@@ -28,7 +28,7 @@ features:
 - gland-dist5
 - gland-dist6
 - lumen-number
-- lumen-gland_ratio
+- lumen-gland-ratio
 - lumen-bam-min
 - lumen-bam-max
 - lumen-bam-mean

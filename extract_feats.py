@@ -307,16 +307,16 @@ def extract_features(
                          adipose_prop) = get_patch_prop(region_info_patch, total_pix, labs=[1,2,3,4,5,6,7,8])
 
                         # add features the dictionary
-                        local_feats_single["gland_inflam_prop"] = inflam_prop
-                        local_feats_single["gland_mucous_prop"] = mucous_prop
-                        local_feats_single["gland_debris_prop"] = debris_prop
-                        local_feats_single["gland_normal_prop"] = normal_prop
-                        local_feats_single["gland_tumour_prop"] = tumour_prop
-                        local_feats_single["gland_adipose_prop"] = adipose_prop
-                        local_feats_single["gland_stroma_prop"] = stroma_prop
-                        local_feats_single["gland_muscle_prop"] = muscle_prop
+                        local_feats_single["gland-inflam-prop"] = inflam_prop
+                        local_feats_single["gland-mucous-prop"] = mucous_prop
+                        local_feats_single["gland-debris-prop"] = debris_prop
+                        local_feats_single["gland-normal-prop"] = normal_prop
+                        local_feats_single["gland-tumour-prop"] = tumour_prop
+                        local_feats_single["gland-adipose-prop"] = adipose_prop
+                        local_feats_single["gland-stroma-prop"] = stroma_prop
+                        local_feats_single["gland-muscle-prop"] = muscle_prop
 
-                        local_feats_single["gland_bam"] = gland_bam
+                        local_feats_single["gland-bam"] = gland_bam
                         for feat_name, value in gland_morph_feats.items():
                             local_feats_single[f"gland-{feat_name}"] = value
                         for idx, value in enumerate(gland_distances):
@@ -362,7 +362,7 @@ def extract_features(
                             lumen_morph_list = np.array(lumen_morph_list)
                         ####
                         local_feats_single["lumen-number"] = nr_lumen
-                        local_feats_single["lumen-gland_ratio"] = lumen_total_area / (gland_area + lumen_total_area)
+                        local_feats_single["lumen-gland-ratio"] = lumen_total_area / (gland_area + lumen_total_area)
                         local_feats_single["lumen-bam-min"] = np.min(lumen_bam_list)
                         local_feats_single["lumen-bam-max"] = np.max(lumen_bam_list)
                         local_feats_single["lumen-bam-mean"] = np.mean(lumen_bam_list)

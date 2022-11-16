@@ -3,20 +3,27 @@
 Process slides with IGUANA.
 
 Usage:
-  run_infer.py [--gpu=<id>] [--mode=<mode>] [--model=<path>] [--batch_size=<n>] [--num_workers=<n>] [--input_dir=<path>] 
+  run_infer.py [--gpu=<id>] [--model_path=<path>] [--model_name=<str>] [--data_dir=<path>] \
+    [--data_info=<path>] [--stats_dir=<path>] [--output_dir=<path>] [--batch_size=<n>] [--num_workers=<n>]
   run_infer.py (-h | --help)
   run_infer.py --version
   
 Options:
-  -h --help            Show this string.
-  --version            Show version.
-  --gpu=<id>           GPU list. [default: 0]
-  --model=<path>       Path to saved checkpoint.
-  --batch_size=<n>     Batch size. [default: 1]
-  --num_workers=<n>    Number of workers. [default: 8]
+  -h --help              Show this string.
+  --version              Show version.
+  --gpu=<id>             GPU list. [default: 0]
+  --model_path=<path>    Path to saved checkpoint.
+  --model_name=<str>     Type of graph convolution used. [default: pna]
+  --data_dir=<path>      Path to where graph data is stored.
+  --data_info=<path>     Path to where data information csv file is stored
+  --stats_dir=<path>     Location of feaure stats directory for input standardisation.
+  --output_dir=<path>    Path where output will be saved. [default: output/]
+  --batch_size=<n>       Batch size. [default: 1]
+  --num_workers=<n>      Number of workers. [default: 8]
 """
 
 import os
+import yaml
 from docopt import docopt
 import tqdm
 import numpy as np
@@ -30,6 +37,7 @@ from torch_geometric.data import DataLoader
 
 from dataloader.graph_loader import FileLoader
 from metrics.stats_utils import get_sens_spec_metrics
+from misc.utils import rm_n_mkdir
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -42,8 +50,8 @@ def get_labels_scores(wsi_names, scores, gt, binarize=True):
     scores_output = []
     for idx, wsi_name in enumerate(wsi_names):
         score = scores[idx]
-        gt_subset = gt[gt["wsi_id"] == wsi_name]
-        lab = list(gt_subset["label_id"])
+        gt_subset = gt[gt["wsi_name"] == wsi_name]
+        lab = list(gt_subset["label"])
         if len(lab) > 0:
             lab = int(lab[0])
             if binarize:
@@ -71,7 +79,10 @@ class InferBase(object):
         model_creator = getattr(model_desc, 'create_model')
 
         # TODO: deal with parsing multi level model desc
-        net = model_creator(model_name=self.model_name, nr_features=25).to('cuda')
+        net = model_creator(
+            model_name=self.model_name,
+            nr_features=len(self.feat_names),
+            node_degree=self.node_degree).to('cuda')
         saved_state_dict = torch.load(self.model_path)
         net.load_state_dict(saved_state_dict['desc'], strict=True)
 
@@ -85,15 +96,12 @@ class Infer(InferBase):
     def __run_model(self, file_list):
 
         print('Loading feature statistics...')
-        mean = np.load(f"{self.stats_path}/mean.npy")
-        median = np.load(f"{self.stats_path}/median.npy")
-        std = np.load(f"{self.stats_path}/std.npy")
-        perc_25 = np.load(f"{self.stats_path}/perc_25.npy")
-        perc_75 = np.load(f"{self.stats_path}/perc_75.npy")
+        with open(f"{self.stats_path}/stats_dict.yml") as fptr:
+            stats_dict = yaml.full_load(fptr)
 
-        feat_stats = [mean, median, std, perc_25, perc_75]
-
-        input_dataset = FileLoader(file_list, feat_stats=feat_stats, norm="standard", data_clean="std")
+        input_dataset = FileLoader(
+            file_list, self.feat_names, feat_stats=stats_dict, norm="standard", data_clean="std"
+        )
         
         dataloader = DataLoader(input_dataset,
                                 num_workers=self.nr_procs,
@@ -120,7 +128,7 @@ class Infer(InferBase):
 
             prob = batch_output['prob']
             true = batch_output['true']
-            wsi_name = batch_output['wsi_name']
+            wsi_name = batch_output['wsi_name'][0]
             num_examples = len(batch_output['true'])
             
             for idx in range(num_examples):
@@ -160,9 +168,7 @@ class Infer(InferBase):
 
     def process_files(self):
         
-        file_list = []
-        for dir_path in self.data_path:
-            file_list.extend(glob.glob('%s/*.dat' % dir_path))
+        file_list = glob.glob(f"{self.data_path}/*.dat")
         file_list.sort()  # to always ensure same input ordering
         
         print('Number of WSI graphs:', len(file_list))
@@ -175,7 +181,7 @@ class Infer(InferBase):
         df.to_csv(f"{self.output_path}/results.csv")
         
         # get stats
-        true, prob  = get_labels_scores(wsi_names, prob, self.gt_path)
+        true, prob  = get_labels_scores(wsi_names, prob, self.data_info)
         self.__get_stats(prob, true)
 
 
@@ -183,30 +189,36 @@ class Infer(InferBase):
 
 if __name__ == '__main__':
     args = docopt(__doc__, version='IGUANA Inference v1.0')
+    print(args)
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args['--gpu']
     
-    fold_nr = 1
-    model_name = "pna" # keep as 'pna' for iguana
-    dataset_name = "imp"
+    # get the subset of features to be input to the GNN
+    with open("features.yml") as fptr:
+        feat_names = list(yaml.full_load(fptr).values())[0]
     
-    ckpt_root = f"/root/lsf_workspace/iguana_data/weights/"
-    data_dir = [f"/root/lsf_workspace/iguana_data/graph_data/{dataset_name}/"]
-    gt_root = "/root/lsf_workspace/iguana_data/ground_truth/"
-    stats_path = "/root/lsf_workspace/iguana_data/stats/"
-    
-    output_path = "output_test/"
+    # load node degree
+    stats_path = args["--stats_dir"]
+    if args["--model_name"] == "pna":
+        node_degree = np.load(f"{stats_path}/node_deg.npy")
+    else:
+        node_degree = None
+
+    if not os.path.exists(args["--output_dir"]):
+        rm_n_mkdir(args["--output_dir"])
     
     #TODO Batch size must be set at 1 at the moment - fix this!
     args = {
-        "model_name": model_name,
-        "model_path": f"{ckpt_root}/iguana_fold{fold_nr}.tar",
+        "model_name": args["--model_name"],
+        "model_path": args["--model_path"],
         "stats_path": stats_path,
-        "data_path": data_dir,
-        "gt_path": f"{gt_root}/{dataset_name}_gt.csv",
+        "node_degree": node_degree,
+        "data_path": args["--data_dir"],
+        "data_info": args["--data_info"],
+        "feat_names": feat_names,
         "batch_size": int(args["--batch_size"]), 
         "nr_procs": int(args["--num_workers"]),
-        "output_path": output_path,
+        "output_path": args["--output_dir"],
     }
  
     infer = Infer(**args)

@@ -11,7 +11,7 @@ class __CoBi(object):
     def __init__(self, fold_nr):
 
         file_ext = ".dat"
-        root_dir = 'test_data/'
+        root_dir = '/root/lsf_workspace/proc_slides/cobi/uhcw/graphs'
         
         self.stats_path = f"{root_dir}/stats"
         
@@ -21,7 +21,7 @@ class __CoBi(object):
         # eg column 2 gives the info for fold1, column 3, gives the info for fold2, etc 
         # for fold info: 1 denotes training, 2 denotes validation and 3 denotes testing
         # if the dataset is an independent test set, use 1 fold info column, with all cells set to 3
-        fold_info = pd.read_csv(f"{root_dir}/data_info.csv")
+        fold_info = pd.read_csv(f"{root_dir}/uhcw_info.csv")
 
         wsi_names = np.array(fold_info.iloc[:, 0])
         fold_info = np.array(fold_info.iloc[:, fold_nr])

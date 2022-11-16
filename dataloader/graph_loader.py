@@ -17,8 +17,8 @@ class FileLoader(torch.utils.data.Dataset):
             self.mean_stats = np.array([feat_stats["mean"][k] for k in self.feat_names])
             self.median_stats = np.array([feat_stats["median"][k] for k in self.feat_names])
             self.std_stats = np.array([feat_stats["std"][k] for k in self.feat_names])
-            self.perc_25_stats= np.array([feat_stats["perc_25"][k] for k in self.feat_names])
-            self.perc_75_stats= np.array([feat_stats["perc_75"][k] for k in self.feat_names])
+            self.perc_25_stats = np.array([feat_stats["perc_25"][k] for k in self.feat_names])
+            self.perc_75_stats = np.array([feat_stats["perc_75"][k] for k in self.feat_names])
         
         # get lower and upper bounds for clipping data (outlier removal)
         if data_clean == 'std':
@@ -56,7 +56,8 @@ class FileLoader(torch.utils.data.Dataset):
         feats_sub = np.array(list(feats_sub.values())).astype("float32") # convert to array
         feats_sub = np.transpose(feats_sub) # ensure NxF
         wsi_name = data["wsi_name"]
-        obj_id = feats["obj_id"]
+        # obj_id = feats["obj_id"]
+        obj_id = ['id'] * feats["gland-bam"].shape[0] #! HACK - fix this!
     
         # clean up data - deal with outliers!
         if self.data_clean is not None:

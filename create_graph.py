@@ -20,9 +20,11 @@ Options:
 import glob
 import os
 import joblib
+import math
 import pandas as pd
 import numpy as np
 from docopt import docopt
+from tqdm import tqdm
 
 from misc.utils import rm_n_mkdir
 
@@ -39,6 +41,9 @@ def preprocess_local_feats(feats, fill_mode="mean"):
             elif fill_mode == "median":
                 fill = np.nanmedian(feat_vals)
             elif fill_mode == "zeros":
+                fill = 0
+            
+            if math.isnan(fill) or math.isinf(fill):
                 fill = 0
             
             # fill nans
@@ -84,7 +89,7 @@ def construct_graphs(list_files, data_info, dist_thresh, output_path):
     """Construct graph."""
     
     list_names = list(data_info["wsi_name"])
-    for filename in list_files:
+    for filename in tqdm(list_files):
         local_feats = f"{filename}/local_feats.dat"
         dst_matrix = f"{filename}/dst_matrix.npy"
         tissue_idx = f"{filename}/tissue_idx.npy"

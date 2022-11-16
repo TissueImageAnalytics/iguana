@@ -3,22 +3,30 @@
 Get the node and feature explanations. Node, feature and wsi-level explanations must be run individually.
 
 Usage:
-  run_explainer.py [--gpu=<id>] [--fold=<n>] [--node] [--feature] [--wsi]
+  run_explainer.py [--gpu=<id>] [--model_name=<str>] [--model_path=<path>] [--node] [--feature] [--wsi] \
+  [--node_exp_method=<str>] [--feat_exp_method=<str>] [--data_dir=<path>] [--output_dir=<path>] [--stats_dir=<path>]
   run_explainer.py (-h | --help)
   run_explainer.py --version
 
 Options:
-  -h --help         Show this string.
-  --version         Show version.
-  --gpu=<id>        Comma separated GPU list. [default: 0]
-  --fold=<n>        Fold number of model to process with. [default: 1]
-  --node            Whether to compute node explanation         
-  --feature         Whether to compute feature explanation
-  --wsi             Whether to compute wsi explanation - must have performed node and feature explanation!
+  -h --help                 Show this string.
+  --version                 Show version.
+  --gpu=<id>                Comma separated GPU list. [default: 0]
+  --model_name=<str>        Name of the graph convolution. IGUANA uses PNA. [default: pna]
+  --model_path=<path>       Path to saved checkpoint.
+  --node                    Whether to compute node explanation.      
+  --feature                 Whether to compute feature explanation.
+  --wsi                     Whether to compute wsi explanation - must have performed node and feature explanation!
+  --node_exp_method=<str>   Node explaination method. [default: gnnexplainer]
+  --feat_exp_method=<str>   Feature explaination method. [default: gnnexplainer]
+  --data_dir=<path>         Path to where graph data is stored.
+  --output_dir=<path>       Path where results will be saved.
+  --stats_dir=<path>        Location of feaure stats directory for input standardisation.
   
 """
 
 import os
+import yaml
 import sys
 import numpy as np
 import joblib
@@ -61,6 +69,8 @@ class Explainer(object):
         output_path, 
         k,
         feat_agg,
+        node_degree,
+        feat_names,
         norm="standard", 
         data_clean="std"
         ):
@@ -78,6 +88,8 @@ class Explainer(object):
         self.run_explain_graph = run_args[2]
         self.k = k
         self.feats_agg = feats_agg
+        self.node_degree = node_degree
+        self.feat_names = feat_names
         self.__load_model()
 
         self.output_path_node = f"{output_path}/node_explain/{self.node_explainer_method}"
@@ -95,13 +107,9 @@ class Explainer(object):
             if not os.path.exists(self.output_path_feats):
                 rm_n_mkdir(self.output_path_feats)
 
-        mean = np.load(f"{stats_path}/mean.npy")
-        median = np.load(f"{stats_path}/median.npy")
-        std = np.load(f"{stats_path}/std.npy")
-        perc_25 = np.load(f"{stats_path}/perc_25.npy")
-        perc_75 = np.load(f"{stats_path}/perc_75.npy")
+        with open(f"{stats_path}/stats_dict.yml") as fptr:
+            self.feat_stats = yaml.full_load(fptr)
 
-        self.feat_stats = [mean, median, std, perc_25, perc_75]
         self.norm = norm
         self.data_clean = data_clean
     
@@ -115,8 +123,9 @@ class Explainer(object):
 
         # TODO: deal with parsing multi level model desc
         self.model = model_creator(
-            model_name=self.model_name, 
-            nr_features=25, 
+            model_name=self.model_name,
+            nr_features=len(self.feat_names),
+            node_degree=self.node_degree,
             return_prob=True
             )
         self.model = self.model.to('cuda')
@@ -124,9 +133,9 @@ class Explainer(object):
         self.model.load_state_dict(saved_state_dict['desc'], strict=True)
 
         self.model2 = model_creator(
-            model_name=self.model_name, 
-            nr_features=25, 
-            return_prob=False
+            model_name=self.model_name,
+            nr_features=len(self.feat_names),
+            node_degree=self.node_degree
             )
         self.model2 = self.model2.to('cuda')
         self.model2.load_state_dict(saved_state_dict['desc'], strict=True)
@@ -148,7 +157,7 @@ class Explainer(object):
             wsi_name = wsi_name[:-4]
             wsi_list.append(wsi_name)
 
-            graph_dataset = FileLoader([filename], self.feat_stats, self.norm, self.data_clean)
+            graph_dataset = FileLoader([filename], self.feat_names, self.feat_stats, self.norm, self.data_clean)
     
             dataloader = DataLoader(
                 graph_dataset,
@@ -188,7 +197,7 @@ class Explainer(object):
                     ig_attr = ig.attribute(
                         feats.unsqueeze(0),
                         target=1, # positive class
-                        additional_forward_args=(batch, edge_index),
+                        additional_forward_args=(edge_index, batch),
                         internal_batch_size=1,
                     )
                     feature_mask = np.abs(ig_attr[0].cpu().detach().numpy())
@@ -201,7 +210,7 @@ class Explainer(object):
                     ig_attr = saliency.attribute(
                         feats.unsqueeze(0),
                         target=1, # positive class
-                        additional_forward_args=(batch, edge_index),
+                        additional_forward_args=(edge_index, batch),
                         )
                     feature_mask = np.abs(ig_attr[0].cpu().detach().numpy())
                     node_scores = np.mean(feature_mask, -1) # compute mean across feature dimensions
@@ -212,7 +221,7 @@ class Explainer(object):
                     node_mask = np.random.rand(nr_nodes)
                 
                 # save node explanations!
-                output_node_exp = {"obj_id": obj_ids.tolist(), "node_exp": node_mask}
+                output_node_exp = {"obj_id": obj_ids, "node_exp": node_mask}
                 joblib.dump(output_node_exp, f"{self.output_path_node}/{wsi_name}.dat")
 
             if self.run_explain_feats:
@@ -223,7 +232,7 @@ class Explainer(object):
                     ig_attr = ig.attribute(
                         feats.unsqueeze(0),
                         target=1, # positive class
-                        additional_forward_args=(batch, edge_index),
+                        additional_forward_args=(edge_index, batch),
                         internal_batch_size=1,
                     )
                     feature_mask = np.abs(ig_attr[0].cpu().detach().numpy())
@@ -233,7 +242,7 @@ class Explainer(object):
                     ig_attr = saliency.attribute(
                         feats.unsqueeze(0),
                         target=1, # positive class
-                        additional_forward_args=(batch, edge_index),
+                        additional_forward_args=(edge_index, batch),
                         )
                     feature_mask = np.abs(ig_attr[0].cpu().detach().numpy())
                 elif self.feat_explainer_method == 'gnnexplainer':
@@ -250,7 +259,7 @@ class Explainer(object):
                 
                 # save feat explanations!
                 # also save original features for easy retrieval
-                output_feat_exp = {"obj_id": obj_ids.tolist(), "feat_exp": feature_mask, "feats": feats.cpu().detach().numpy()}
+                output_feat_exp = {"obj_id": obj_ids, "feat_exp": feature_mask, "feats": feats.cpu().detach().numpy()}
                 joblib.dump(output_feat_exp, f"{self.output_path_feats}/{wsi_name}.dat")            
 
             if self.run_explain_graph:
@@ -324,8 +333,10 @@ if __name__ == "__main__":
     print(args)
     os.environ["CUDA_VISIBLE_DEVICES"] = args["--gpu"]
 
-    node_explainer_method = "gnnexplainer" # choose from `attention`, `ig`, `gradients`, `gnnexplainer` or `random`
-    feat_explainer_method = "gnnexplainer" # choose from `ig` `gradients` or `gnnexplainer`  or `random`
+    model_name = args["--model_name"]
+
+    node_explainer_method = args["--node_exp_method"] # choose from `attention`, `ig`, `gradients`, `gnnexplainer` or `random`
+    feat_explainer_method = args["--feat_exp_method"] # choose from `ig` `gradients` or `gnnexplainer`  or `random`
     
     run_explain_node = args['--node']
     run_explain_feats = args['--feature']
@@ -337,51 +348,37 @@ if __name__ == "__main__":
     explainer_method = {"node": node_explainer_method, "feats": feat_explainer_method}
     run_args = [run_explain_node, run_explain_feats, run_explain_graph]
 
-    dataset_name = "uhcw"
-    model_name = "pna"
-    ckpt_root = "/root/lsf_workspace/iguana_data/weights/"
-    fold = int(args['--fold']) # if uhcw, process relevant test set - otherwise process all data with the model trained on this fold
+    # load node degree
+    stats_path = args["--stats_dir"]
+    if model_name == "pna":
+        node_degree = np.load(f"{stats_path}/node_deg.npy")
+    else:
+        node_degree = None
+    
+    model_path = args["--model_path"]
+    data_dir = args["--data_dir"]
+    
+    output_path = args["--output_dir"]
+    if not os.path.exists(output_path):
+        rm_n_mkdir(output_path)
+    
+    # load the list of graph files to process
+    data_list = glob.glob(f"{data_dir}/*.dat")
 
-    # modify below if wish to only get the explanation for a single WSI
-    single_slide = False
-    wsi_name_list = ["H17-61904_C1RIBH17-61904C11RIB_1"]
-    
-    output_path = "output_test/"
-    data_root = f"/root/lsf_workspace/iguana_data/graph_data/{dataset_name}/"
-    if dataset_name == "uhcw" and not single_slide:
-        data_root = f"{data_root}/test{fold}/"
-    stats_path = "/root/lsf_workspace/iguana_data/stats/"
-    
+    # init empty lists
     wsi_list = []
     top_feats_list = []
     top_imports_list = []
 
-    if single_slide:
-        for wsi_name in wsi_name_list:
-            if os.path.exists(f"/{data_root}/test1/{wsi_name}.dat"):
-                fold = 1
-            elif os.path.exists(f"/{data_root}/test2/{wsi_name}.dat"):
-                fold = 2
-            elif os.path.exists(f"/{data_root}/test3/{wsi_name}.dat"):
-                fold = 3
-            data_list = [f"/{data_root}/test{fold}/{wsi_name}.dat"]
-            ckpt_path = f"{ckpt_root}/iguana_fold{fold}.tar"
+    # get the subset of features to be input to the GNN
+    with open("features.yml") as fptr:
+        feat_names = list(yaml.full_load(fptr).values())[0]
 
-            xplainer = Explainer(model_name, explainer_method, run_args, ckpt_path, stats_path, output_path, k, feats_agg)
-            wsi_list_, top_feats_list_, top_imports_list_ = xplainer.run(data_list)
-            wsi_list.extend(wsi_list_)
-            top_feats_list.extend(top_feats_list_)
-            top_imports_list.extend(top_imports_list_)
-        
-    else:
-        data_list = glob.glob(f"{data_root}/*.dat")
-        ckpt_path = f"{ckpt_root}/iguana_fold{fold}.tar"
-
-        xplainer = Explainer(model_name, explainer_method, run_args, ckpt_path, stats_path, output_path, k, feats_agg)
-        wsi_list_, top_feats_list_, top_imports_list_ = xplainer.run(data_list)
-        wsi_list.extend(wsi_list_)
-        top_feats_list.extend(top_feats_list_)
-        top_imports_list.extend(top_imports_list_)
+    xplainer = Explainer(model_name, explainer_method, run_args, model_path, stats_path, output_path, k, feats_agg, node_degree, feat_names)
+    wsi_list_, top_feats_list_, top_imports_list_ = xplainer.run(data_list)
+    wsi_list.extend(wsi_list_)
+    top_feats_list.extend(top_feats_list_)
+    top_imports_list.extend(top_imports_list_)
     
     if run_explain_graph:
         top_feats_dict = {"wsi": wsi_list, "top_features": np.array(top_feats_list), "top_importances": np.array(top_imports_list)}
