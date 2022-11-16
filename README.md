@@ -110,17 +110,21 @@ So, if considering 5 folds, then you will need to have 5 columns following `wsi_
 
 ## Inference and Explanation
 
-Insert general overview of inference and explanation
+To see the full list of command line arguments for inference and explanation, run `python run_infer.py -h` and `python run_explainer.py -h`, respectively. We have also created two bash scripts to make it easier to run the code with the appropriate arguments. As an example, to run model inference enter:
 
-- Run model inference: `python run_infer.py`
+```
+python run_infer.py --gpu=<gpu_id> --model_path=<path> --data_dir=<path> --data_info=<path> --stats_dir=<path>
+```
 
-- Get node explanations: `python run_explainer.py --node`
+For explainability, you can get node, feature and WSI-level explainations as follows:
 
-- Get feature explanations: `python run_explainer.py --feature`
+- Get node explanations: `python run_explainer.py --node --node_exp_method=<str> --data_dir=<path> --stats_path=<path>`
 
-- Get WSI-level explanations: `python run_explainer.py --wsi`
+- Get feature explanations: `python run_explainer.py --feature --feat_exp_method=<str> --data_dir=<path> --stats_path=<path>`
 
-Note, node and feature explanations must have been run before triggering wsi explanation.
+- Get WSI-level explanations: `python run_explainer.py --wsi --data_dir=<path> --stats_path=<path>`
+
+Note, node and feature explanations must have been run before triggering wsi explanation. You will also need to incorp
 
 ## Interactive Demo
 We have made an interactive demo to help visualise the output of our model. Note, this is not optimised for mobile phones and tablets. The demo was built using the TIAToolbox [tile server](https://tia-toolbox.readthedocs.io/en/latest/_autosummary/tiatoolbox.visualization.tileserver.TileServer.html).
