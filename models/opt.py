@@ -17,16 +17,17 @@ from .run_desc import proc_valid_step_output, train_step, valid_step
 
 train_config = {
     # ------------------------------------------------------------------
-    # ! All phases have the same number of run engine
     # phases are run sequentially from index 0 to N
     "phase_list": [
         {
             "run_info": {
                 # may need more dynamic for each network
                 "net": {
-                    "desc": lambda: create_model(
-                        model_name="pna", 
-                        nr_features=25),
+                    # model name and number of features retrieved from config
+                    "desc": lambda x,y,z : create_model(
+                        model_name=x, 
+                        nr_features=y,
+                        node_degree=z),
                     "optimizer": [
                         optim.Adam,
                         {  # should match keyword for parameters within the optimizer
@@ -45,7 +46,8 @@ train_config = {
             },
             "nr_types": None,
             "target_info": {"gen": None, "viz": None},
-            "batch_size": {"train": 64, "valid": 64,},  # engine name : value
+            # "batch_size": {"train": 64, "valid": 64,},
+            "batch_size": {"train": 4, "valid": 4,},
             "nr_epochs": 60,
         },
     ],
@@ -56,7 +58,7 @@ train_config = {
     "run_engine": {
         "train": {
             # TODO: align here, file path or what? what about CV?
-            "dataset": "",  # whats about compound dataset ?
+            "dataset": "",  # what about compound dataset ?
             "nr_procs": 10,  # number of threads for dataloader
             "run_step": train_step,  # TODO: function name or function variable ?
             "reset_per_run": False,

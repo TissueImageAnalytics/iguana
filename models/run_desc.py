@@ -1,12 +1,11 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from itertools import chain
-from sklearn.metrics import confusion_matrix, roc_auc_score
+from sklearn.metrics import roc_auc_score
 
 import sys
 sys.path.append("..")
-from metrics.stats_utils import get_auc_pr_sen_spec_metrics_abnormal
+from metrics.stats_utils import get_sens_spec_metrics
 from misc.utils import ranking_loss
 
 
@@ -28,11 +27,8 @@ def train_step(batch_data, run_info, device="cuda"):
     edge_index = batch_data.edge_index
     feats = batch_data.x
     label = batch_data.y
-
-    #! the first 2 columns are the wsi name and object ids, respectively. 
-    #! Need to be dropped before passing to GCN!
-    # feats = feats[: 2:]
-
+    
+    #! below is specific to CoBi!
     # data is 3-class -> convert to 2 class (normal vs abnormal)
     label_orig = label.clone()  # make copy of original 3 class label for evaluation
     label[label > 1] = 1
@@ -47,7 +43,7 @@ def train_step(batch_data, run_info, device="cuda"):
     optimizer = run_info["net"]["optimizer"]
     ####
     model.train()
-    model.zero_grad()  # not rnn so not accumulate
+    model.zero_grad()  # not rnn so don't accumulate
     out_dict = model(feats, edge_index, batch)
     out = out_dict["output_log"]
     prob = out
@@ -65,9 +61,8 @@ def train_step(batch_data, run_info, device="cuda"):
     loss = torch.unsqueeze(loss, 0)
 
     track_value("overall_loss", loss.cpu().item())
+    
     # * gradient update
-
-    # torch.set_printoptions(precision=10)
     loss.backward()
     optimizer.step()
     ####
@@ -97,7 +92,7 @@ def valid_step(batch_data, run_info, device="cuda"):
 
     ####
     model = run_info["net"]["desc"]
-    model.eval()  # infer mode
+    model.eval()  # inference mode
 
     # --------------------------------------------------------------
     with torch.no_grad():  # dont compute gradient
@@ -111,13 +106,12 @@ def valid_step(batch_data, run_info, device="cuda"):
 
 
 def infer_step(batch_data, model, device="cuda"):
-
     ####
     batch = batch_data.batch
     edge_index = batch_data.edge_index
     feats = batch_data.x
     label = batch_data.y
-    wsi_info = batch_data.wsi_info
+    wsi_name = batch_data.wsi_name
 
     # data is 3-class -> convert to 2 class (normal vs abnormal)
     label_orig = label.clone()  # make copy of original 3 class label for evaluation
@@ -129,7 +123,7 @@ def infer_step(batch_data, model, device="cuda"):
     label = label.to(device).type(torch.int64)
 
     ####
-    model.eval()  # infer mode
+    model.eval()  # inference mode
 
     # --------------------------------------------------------------
     with torch.no_grad():  # dont compute gradient
@@ -138,21 +132,16 @@ def infer_step(batch_data, model, device="cuda"):
         node_scores = out_dict["node_scores"]
 
     # * Its up to user to define the protocol to process the raw output per step!
-    result_dict = {"true": label, "true_orig": label_orig, "prob": prob, "node_scores": node_scores, "wsi_info": wsi_info}
+    result_dict = {"true": label, "true_orig": label_orig, "prob": prob, "node_scores": node_scores, "wsi_name": wsi_name}
 
     return result_dict
 
 
 def proc_valid_step_output(raw_data):
-    # TODO: add auto populate from main state track list
     track_dict = {"scalar": {}, "image": {}}
 
     def track_value(name, value, vtype):
         return track_dict[vtype].update({name: value})
-
-    def longlist2array(longlist):
-        tmp = list(chain.from_iterable(longlist))
-        return np.array(tmp).reshape((len(longlist),) + longlist[0].shape)
 
     prob = raw_data["prob"]
     true = raw_data["true"]
@@ -172,11 +161,10 @@ def proc_valid_step_output(raw_data):
     pred[pred >= 0.5] = 1
     pred[pred < 0.5] = 0
     true = np.array(true_list)
-    
-    auc = roc_auc_score(true, prob)
-    conf = confusion_matrix(true, pred)
 
-    _, _, spec_95, spec_97, spec_98, spec_99, spec_100 = get_auc_pr_sen_spec_metrics_abnormal(true, prob)
+    auc = roc_auc_score(true, prob)
+
+    spec_95, spec_97, spec_98, spec_99, spec_100 = get_sens_spec_metrics(true, prob)
 
     track_value("AUC-ROC", auc, "scalar")
     track_value("Specifity_at_95_Sensitivity", spec_95, "scalar")

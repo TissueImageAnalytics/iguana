@@ -1,4 +1,3 @@
-import numpy as np
 from typing import Optional
 
 import torch
@@ -12,7 +11,6 @@ from torch_geometric.nn import (
     PNAConv, 
     EdgeConv, 
     GATConv,
-    GlobalAttention,
     global_mean_pool, 
 )
 from torch_geometric.utils import softmax
@@ -31,13 +29,13 @@ def weights_init(m):
 
 class GlobalAtt(torch.nn.Module):
     """GlobalAttenion but returning the attention scores."""
-    def __init__(self, gate_nn, nn=None):
-        super(GlobalAttention, self).__init__()
+    def __init__(self, gate_nn, nn):
+        super().__init__()
         self.gate_nn = gate_nn
         self.nn = nn
-
+        
         self.reset_parameters()
-
+    
     def reset_parameters(self):
         reset(self.gate_nn)
         reset(self.nn)
@@ -67,6 +65,7 @@ class GlobalAtt(torch.nn.Module):
 
         return out, gate
 
+
 class GraphSageLayer(nn.Module):
     """GraphSage layer.
 
@@ -88,6 +87,7 @@ class GraphSageLayer(nn.Module):
             new_feat = self.gconv(x, edge_index)
 
         return new_feat
+
 
 class GATLayer(nn.Module):
     """GAT layer.
@@ -215,6 +215,7 @@ class NetDesc(nn.Module):
         self,
         model_name,
         nr_features,
+        node_degree,
         nhid=[12,12,12],
         grph_dim=10,
         dropout_rate=0.03,
@@ -228,6 +229,8 @@ class NetDesc(nn.Module):
         self.use_edges = use_edges
         self.agg = agg
         self.return_prob = return_prob
+        
+        node_degree = torch.Tensor(node_degree)
 
         if model_name == "graphsage":
             self.gconv1 = GraphSageLayer(nhid[0], nhid[1])
@@ -239,13 +242,8 @@ class NetDesc(nn.Module):
             self.gconv1 = GINLayer(nhid[0], nhid[1], act="relu")
             self.gconv2 = GINLayer(nhid[1], nhid[2], act="relu")
         elif model_name == "pna":
-            #! hard-coded at the moment!
-            #TODO refactor
-            deg = np.load("/root/lsf_workspace/graph_data/cobi/graph_data_refined/deg.npy")
-            deg = torch.Tensor(deg)
-            ######
-            self.gconv1 = PNALayer(nhid[0], nhid[1], deg=deg)
-            self.gconv2 = PNALayer(nhid[1], nhid[2], deg=deg)
+            self.gconv1 = PNALayer(nhid[0], nhid[1], deg=node_degree)
+            self.gconv2 = PNALayer(nhid[1], nhid[2], deg=node_degree)
         elif model_name == "edge":
             self.gconv1 = EdgeConvLayer(nhid[0], nhid[1], act="relu")
             self.gconv2 = EdgeConvLayer(nhid[1], nhid[2], act="relu")
@@ -253,7 +251,6 @@ class NetDesc(nn.Module):
             self.gconv1 = nn.Linear(nhid[0], nhid[1])
             self.gconv2 = nn.Linear(nhid[1], nhid[2])
 
-        ## local 
         self.lin0 = nn.Linear(nr_features, nhid[0])
         self.lin_emb0 = nn.Linear(nhid[0], grph_dim)
         self.lin_emb1 = nn.Linear(nhid[1], grph_dim) 
@@ -287,7 +284,6 @@ class NetDesc(nn.Module):
             att_pool = self.gpool(x_combined, batch)
             logits = att_pool[0]
             scores = att_pool[1]
-            # logits = self.gpool(x_combined, batch)
             scores = None
         elif self.agg == 'mean':
             scores = self.lin_scores(x_combined)

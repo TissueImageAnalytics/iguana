@@ -1,11 +1,9 @@
-from inspect import signature
-from math import sqrt
+
 from typing import Optional
 
 import torch
 from torch import Tensor
 
-from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
 
 
