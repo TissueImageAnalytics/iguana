@@ -116,6 +116,9 @@ To see the full list of command line arguments for inference and explanation, ru
 python run_infer.py --gpu=<gpu_id> --model_path=<path> --data_dir=<path> --data_info=<path> --stats_dir=<path>
 ```
 
+You will see above that the `data_info` csv file will need to be incorporated as an argument. This will determine the label and which images to process. By default, the code will process images with values in the fold column equal to 3. If considering a test set, there will be a single 'fold' column named `test_info`. The `fold_nr` and `split_nr` can be added as additional arguments if considering cross validation, which determines the subset of the data from the csv file.
+
+
 For explainability, you can get node, feature and WSI-level explainations as follows:
 
 - Get node explanations: `python run_explainer.py --node --node_exp_method=<str> --data_dir=<path> --stats_path=<path>`
@@ -124,7 +127,7 @@ For explainability, you can get node, feature and WSI-level explainations as fol
 
 - Get WSI-level explanations: `python run_explainer.py --wsi --data_dir=<path> --stats_path=<path>`
 
-Note, node and feature explanations must have been run before triggering wsi explanation. You will also need to incorp
+Note, node and feature explanations must have been run before triggering wsi explanation. 
 
 ## Interactive Demo
 We have made an interactive demo to help visualise the output of our model. Note, this is not optimised for mobile phones and tablets. The demo was built using the TIAToolbox [tile server](https://tia-toolbox.readthedocs.io/en/latest/_autosummary/tiatoolbox.visualization.tileserver.TileServer.html).
@@ -141,6 +144,10 @@ To see which histological features are contributing to glands being flagged as a
 
 ![demo](https://user-images.githubusercontent.com/20071401/201095785-d7ce01c3-9652-425e-b1cd-38dd22672b81.gif)
 
+## Sample Data and Weights
+We have released a small portion of data to allow researchers to get the code running and see how our graph data is structured. We also include two 'data info' csv files - one as if the data is to be used for cross validation and the other as an external test set. Click [here](https://drive.google.com/drive/folders/14MYdB-Acb93L6IdJfHnlWG7M2pkBn53I?usp=sharing) to download the sample dataset.
+
+To download the **IGUANA weights** trained on each fold of the UHCW dataset, click [here](https://drive.google.com/drive/folders/1J78dItPqMZcj2BsM4mf69x61wNAuJwKP?usp=share_link). To get the code running, you will also need the stats info used to standardise the input data. This includes the statistics (mean, mean, etc) of the features and the input node degree. Click [here](https://drive.google.com/drive/folders/1vcbf-9YrtoQUpFvf_l73iy5TupVWEdBF?usp=sharing) to download the stats info.
 ## License
 
 Code is under a GPL-3.0 license. See the [LICENSE](https://github.com/TissueImageAnalytics/cerberus/blob/master/LICENSE) file for further details.
