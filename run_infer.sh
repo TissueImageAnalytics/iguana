@@ -6,4 +6,3 @@ python run_infer.py \
 --data_info="/root/lsf_workspace/proc_slides/cobi/colchester/graphs/colchester_info.csv" \
 --stats_dir="/root/lsf_workspace/proc_slides/cobi/uhcw/graphs/stats" \
 --output_dir="output_test/" \
---batch_size=1
