@@ -56,9 +56,8 @@ class FileLoader(torch.utils.data.Dataset):
         feats_sub = np.array(list(feats_sub.values())).astype("float32") # convert to array
         feats_sub = np.transpose(feats_sub) # ensure NxF
         wsi_name = data["wsi_name"]
-        # obj_id = feats["obj_id"]
-        obj_id = ['id'] * feats["gland-bam"].shape[0] #! HACK - fix this!
-    
+        obj_id = feats["obj_id"]
+ 
         # clean up data - deal with outliers!
         if self.data_clean is not None:
             # local feats
