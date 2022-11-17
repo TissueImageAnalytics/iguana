@@ -4,7 +4,8 @@ Process slides with IGUANA.
 
 Usage:
   run_infer.py [--gpu=<id>] [--model_path=<path>] [--model_name=<str>] [--data_dir=<path>] \
-    [--data_info=<path>] [--stats_dir=<path>] [--output_dir=<path>] [--batch_size=<n>] [--num_workers=<n>]
+    [--data_info=<path>] [--stats_dir=<path>] [--output_dir=<path>] [--batch_size=<n>] \
+    [--fold_nr=<n>] [--split_nr=<n>] [--num_workers=<n>]
   run_infer.py (-h | --help)
   run_infer.py --version
   
@@ -19,7 +20,10 @@ Options:
   --stats_dir=<path>     Location of feaure stats directory for input standardisation.
   --output_dir=<path>    Path where output will be saved. [default: output/]
   --batch_size=<n>       Batch size. [default: 1]
+  --fold_nr=<n>          Fold number considered during cross validation. Don't change if considering independent test set. [default: 1]
+  --split_nr=<n>         Only consider slides in the data info csv according to this selected number. [default: 3]
   --num_workers=<n>      Number of workers. [default: 8]
+
 """
 
 import os
@@ -45,7 +49,6 @@ warnings.filterwarnings('ignore')
 
 def get_labels_scores(wsi_names, scores, gt, binarize=True):
     """Align the scores and labels."""
-    gt = pd.read_csv(gt)
     labels_output = []
     scores_output = []
     for idx, wsi_name in enumerate(wsi_names):
@@ -168,7 +171,14 @@ class Infer(InferBase):
 
     def process_files(self):
         
-        file_list = glob.glob(f"{self.data_path}/*.dat")
+        # select the slides according to selected fold_nr and split_nr
+        # independent test set should have split_nr all equal to 3
+        data_info = pd.read_csv(self.data_info)
+        file_list = []
+        for row in data_info.iterrows():
+            wsi_name = row[1].iloc[0]
+            if row[1].iloc[self.fold_nr] == self.split_nr:
+                file_list.append(f"{self.data_path}/{wsi_name}.dat")
         file_list.sort()  # to always ensure same input ordering
         
         print('Number of WSI graphs:', len(file_list))
@@ -181,7 +191,7 @@ class Infer(InferBase):
         df.to_csv(f"{self.output_path}/results.csv")
         
         # get stats
-        true, prob  = get_labels_scores(wsi_names, prob, self.data_info)
+        true, prob  = get_labels_scores(wsi_names, prob, data_info)
         self.__get_stats(prob, true)
 
 
@@ -219,6 +229,8 @@ if __name__ == '__main__':
         "batch_size": int(args["--batch_size"]), 
         "nr_procs": int(args["--num_workers"]),
         "output_path": args["--output_dir"],
+        "fold_nr": int(args["--fold_nr"]),
+        "split_nr": int(args["--split_nr"]),
     }
  
     infer = Infer(**args)
