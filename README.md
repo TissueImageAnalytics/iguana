@@ -49,7 +49,7 @@ As a first step, WSIs need to be processed with Cerberus to perform simultaneous
 - Lumen segmentation
 - Tissue type classification
 
-Refer to [this repository](https://github.com/TissueImageAnalytics/cerberus) for details on how to run Cerberus.
+Refer to [this repository](https://github.com/TissueImageAnalytics/cerberus) for details on how to run Cerberus. Note, in this repo we also assume that tissue masks have been extracted before running Cerberus.
 
 ### Feature Extraction
 To perform feature extraction run `extract-feats.py`. To see a full list of command line arguments, use:
