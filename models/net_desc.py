@@ -6,10 +6,7 @@ import torch.nn.functional as F
 from torch.nn import BatchNorm1d
 
 from torch_geometric.nn import (
-    GINConv, 
-    SAGEConv, 
     PNAConv, 
-    EdgeConv, 
     GATConv,
     global_mean_pool, 
 )
@@ -64,117 +61,6 @@ class GlobalAtt(torch.nn.Module):
         out = scatter_add(gate * x, batch, dim=0, dim_size=size)
 
         return out, gate
-
-
-class GraphSageLayer(nn.Module):
-    """GraphSage layer.
-
-    Args:
-        in_ch: number of input channels.
-        out_ch: number of output channels.
-
-    """
-
-    def __init__(self, in_ch, out_ch):
-        super().__init__()
-        self.gconv = SAGEConv(in_ch, out_ch)
-
-    def forward(self, x, edge_index, freeze=False):
-        if self.training:
-            with torch.set_grad_enabled(not freeze):
-                new_feat = self.gconv(x, edge_index)
-        else:
-            new_feat = self.gconv(x, edge_index)
-
-        return new_feat
-
-
-class GATLayer(nn.Module):
-    """GAT layer.
-
-    Args:
-        in_ch: number of input channels.
-        out_ch: number of output channels.
-
-    """
-
-    def __init__(self, in_ch, out_ch):
-        super().__init__()
-        self.gconv = GATConv(in_ch, out_ch)
-
-    def forward(self, x, edge_index, freeze=False):
-        if self.training:
-            with torch.set_grad_enabled(not freeze):
-                new_feat = self.gconv(x, edge_index)
-        else:
-            new_feat = self.gconv(x, edge_index)
-
-        return new_feat
-
-
-class GINLayer(nn.Module):
-    """Graph Isomorphic Network layer.
-
-    Args:
-        in_ch: number of input channels.
-        out_ch: number of output channels.
-
-    """
-
-    def __init__(self, in_ch, out_ch, act=False):
-        super().__init__()
-        act_dict = {"relu": nn.ReLU(), "tanh": nn.Tanh(), "identity": nn.Sequential()}
-        self.gconv = GINConv(
-            nn.Sequential(
-                nn.Linear(in_ch, out_ch),
-                BatchNorm1d(out_ch),
-                act_dict[act],
-                nn.Linear(out_ch, out_ch),
-                act_dict[act],
-            )
-        )
-
-    def forward(self, x, edge_index, freeze=False):
-        if self.training:
-            with torch.set_grad_enabled(not freeze):
-                new_feat = self.gconv(x, edge_index)
-        else:
-            new_feat = self.gconv(x, edge_index)
-
-        return new_feat
-
-
-class EdgeConvLayer(nn.Module):
-    """Edge Conv layer.
-
-    Args:
-        in_ch: number of input channels.
-        out_ch: number of output channels.
-
-    """
-
-    def __init__(self, in_ch, out_ch, act=False):
-        super().__init__()
-        act_dict = {"relu": nn.ReLU(), "tanh": nn.Tanh(), "identity": nn.Sequential()}
-        self.gconv = EdgeConv(
-            nn.Sequential(
-                nn.Linear(in_ch*2, out_ch),
-                BatchNorm1d(out_ch),
-                act_dict[act],
-                nn.Linear(out_ch, out_ch),
-                act_dict[act],
-            ),
-            aggr = 'mean'
-        )
-
-    def forward(self, x, edge_index, freeze=False):
-        if self.training:
-            with torch.set_grad_enabled(not freeze):
-                new_feat = self.gconv(x, edge_index)
-        else:
-            new_feat = self.gconv(x, edge_index)
-
-        return new_feat
 
 
 class PNALayer(nn.Module):
