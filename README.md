@@ -34,13 +34,12 @@ pip install torch-geometric
 
 - `doc`: image files used for rendering the README - not necessary for running the code. 
 - `dataloader`: contains code for loading the data to the model.
-- `explainer`: utility scripts and functions for explanation method.
 - `metrics`: utility scripts and functions for computing metrics/statistics.
 - `misc`: miscellaneous scripts and functions.
 - `models`: scripts relating to defining the model, the hyperparameters and I/O configuration.
 - `run_utils`: main engine and callbacks.
 
-## Graph Construction and Training
+## Graph Construction
 
 ### Histological Segmentation
 As a first step, WSIs need to be processed with Cerberus to perform simultaneous prediction of:
@@ -81,34 +80,8 @@ The above command converts the data to a dictionary with the following keys:
 - `label`: The label of the graph.
 - `wsi_name`: Filename of the WSI.
 
-### Training the Model
-To trigger training, use:
 
-```
-python run_train.py --gpu=<gpu_id> --device=<device> --compute_stats --compute_deg --deg_path=<path>
-```
-
-- `gpu`: a comma separated list indicating the GPUs in which to run the model on.
-- `device`: either `cpu` or `cuda`.
-- `compute_stats`: whether to compute statistics of all features in the dataset. This only need to be performed once for each dataset as it is quite time-consuming.
-- `compute_deg`: PNA convolution uses the node degree information. Therefore, only consider this is using PNA. Again, only use this once per dataset as it can be time-consuming.
-
-Note, the directory where training logs are saved is set in `config.py`. Here, you can also set the name of the experiment run with `exp_nr`.
-
-Additional hyperparameters, such as number of epochs and learning rate are set in `models/opt.py`.
-
-All data info should be included in `dataset.py`. For your own dataset, you will need to create your own class! The code will expect that for each dataset, a corresponding `data_info` csv file is provided. The path to this file should be included in the relevant class in `dataset.py`. The csv file should have the following columns (**also ensure the same order**):
-
-- `wsi_name`
-- `fold_1`
-- ...
-- `fold_n`
-- `label`
-
-So, if considering 5 folds, then you will need to have 5 columns following `wsi_name`. `label` must be the final column. Within each fold column, 1 indicates training, 2 validation and 3 test. If not using cross-validation, then simply use a single column.
-
-
-## Inference and Explanation
+## Inference
 
 To see the full list of command line arguments for inference and explanation, run `python run_infer.py -h` and `python run_explainer.py -h`, respectively. We have also created two bash scripts to make it easier to run the code with the appropriate arguments. As an example, to run model inference enter:
 
@@ -118,16 +91,6 @@ python run_infer.py --gpu=<gpu_id> --model_path=<path> --data_dir=<path> --data_
 
 You will see above that the `data_info` csv file will need to be incorporated as an argument. This will determine the label and which images to process. By default, the code will process images with values in the fold column equal to 3. If considering a test set, there will be a single 'fold' column named `test_info`. The `fold_nr` and `split_nr` can be added as additional arguments if considering cross validation, which determines the subset of the data from the csv file.
 
-
-For explainability, you can get node, feature and WSI-level explainations as follows:
-
-- Get node explanations: `python run_explainer.py --node --node_exp_method=<str> --data_dir=<path> --stats_path=<path>`
-
-- Get feature explanations: `python run_explainer.py --feature --feat_exp_method=<str> --data_dir=<path> --stats_path=<path>`
-
-- Get WSI-level explanations: `python run_explainer.py --wsi --data_dir=<path> --stats_path=<path>`
-
-Note, node and feature explanations must have been run before triggering wsi explanation. 
 
 ## Interactive Demo
 We have made an interactive demo to help visualise the output of our model. Note, this is not optimised for mobile phones and tablets. The demo was built using the TIAToolbox [tile server](https://tia-toolbox.readthedocs.io/en/latest/_autosummary/tiatoolbox.visualization.tileserver.TileServer.html).
