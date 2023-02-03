@@ -8,7 +8,7 @@
 
 # Interpretable Gland-Graph Networks using a Neural Aggregator
 
-IGUANA is a graph neural network built for colon biopsy screening. IGUANA represents a whole-slide image (WSI) as a graph built with nodes on top of glands in the tissue, each node associated with a set of interpretable features. The output of the pipeline is explainable, indicating glands and features that contribute to a WSI being predicted as abnormal. 
+IGUANA is a graph neural network built for colon biopsy screening. IGUANA represents a whole-slide image (WSI) as a graph built with nodes on top of glands in the tissue, each node associated with a set of interpretable features. 
 
 For a full description, take a look at our [preprint](https://doi.org/10.1101/2022.10.17.22279804).
 
