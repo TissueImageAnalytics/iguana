@@ -39,47 +39,6 @@ pip install torch-geometric
 - `models`: scripts relating to defining the model, the hyperparameters and I/O configuration.
 - `run_utils`: main engine and callbacks.
 
-## Graph Construction
-
-### Histological Segmentation
-As a first step, WSIs need to be processed with Cerberus to perform simultaneous prediction of:
-- Nuclear segmentation and classification
-- Gland segmentation and classification
-- Lumen segmentation
-- Tissue type classification
-
-Refer to [this repository](https://github.com/TissueImageAnalytics/cerberus) for details on how to run Cerberus. Note, in this repo we also assume that tissue masks have been extracted before running Cerberus.
-
-### Feature Extraction
-To perform feature extraction run `extract-feats.py`. To see a full list of command line arguments, use:
-
-```
-python extract_feats.py -h
-```
-
-You will see that one of the arguments is `focus_mode`. This denotes the non-epithelial area considered for cell quantification. For the original publication, we considered the lamina propria (`focus_mode=lp`) which is the area surrounding the glands. If `lp` is not selected, then the entire tissue is considered for cell quantification.
-
-### Constructing the Graphs
-Next, we convert the features into a format to be used by our graph learning model. Here, we also fill in missing values (denoted by `nan`).
-
-To do this, run:
-
-```
-python create_graph.py --input_path=<path> --output_path=<path> --dist_thresh=<n> --data_info=<path>
-```
-
-- `input_path`: path to features extracted using `extract_feats.py`.
-- `output_path`: path to where graph data will be saved.
-- `dist_thresh`: only connect glands if they are within a distance less than this threshold. 
-- `data_info`: information regarding the labels and fold info of the data. More info on this is provided when describing [model training](#training-the-model).
-
-The above command converts the data to a dictionary with the following keys:
-
-- `local_feats`: a dictionary where each key denotes the feature name and the corresponding values denote the features. Note, in this dictionary we also include the `obj_id`, which represents the unique identifier of each gland (as originally used in the Cerberus output).
-- `edge_index`: 2xN array of indicies showing the presence of edges between nodes.
-- `label`: The label of the graph.
-- `wsi_name`: Filename of the WSI.
-
 
 ## Inference
 
