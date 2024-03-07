@@ -2,11 +2,9 @@ import os
 import random
 import shutil
 from collections import OrderedDict
-
 import numpy as np
 import torch
 import torch.nn as nn
-from imgaug import imgaug as ia
 from termcolor import colored
 from torch.autograd import Variable
 
@@ -26,7 +24,6 @@ def check_manual_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # ia.random.seed(seed)
 
     print('Using manual seed: {seed}'.format(seed=seed))
     return
